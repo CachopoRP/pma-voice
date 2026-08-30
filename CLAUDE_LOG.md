@@ -1,5 +1,27 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-08-30 (2) — Aviso "Mumble native functions are deprecated" — esperado, sin acción · Claude
+
+**Reportado:** en consola aparece `The Mumble native functions are deprecated and will be
+removed in a future update. Please use the server controlled voice channels instead.`
+
+**Investigado:** aviso real y documentado por Cfx.re — están deprecando las natives de Mumble
+(`MumbleSetVoiceChannel`, `MumbleCreateChannel`, etc., las que usa `pma-voice` por debajo) en
+favor de un sistema nuevo 100% server-side (`CreateVoiceChannel`, `AddPlayerToVoiceChannel`,
+etc.) que cierra un problema de seguridad real del sistema Mumble antiguo (con `sv_mumble`, un
+cliente modificado podía unirse a cualquier canal ajeno y escuchar). **Sin fecha de eliminación
+anunciada** (confirmado en la documentación oficial) — mismo aviso que ya dejó anotado
+`rpbase/server-enhanced.cfg` el 2026-08-24 ("deprecado pero no roto"). `AvarianKnight/pma-voice`
+(upstream de este fork) sigue con commits activos hasta junio 2026, sin ninguna migración a las
+natives nuevas todavía.
+
+**Sin acción por ahora.** Cuando Cfx.re retire de verdad las natives de Mumble, lo esperable es
+que el propio mantenedor de `pma-voice` migre el recurso primero — en ese momento, traer esa
+actualización con el mismo mecanismo de fork que se usa para el resto de recursos de Proyecto
+Savia (diff contra upstream, reaplicar personalizaciones si las hay).
+
+---
+
 ## 2026-08-30 — Fork creado: nunca se había migrado a Enhanced (jugadores sin voz) · Claude
 
 **Reportado:** "no nos escuchamos" — investigando, se confirmó que **no había ningún sistema de voz configurado en Enhanced en absoluto**: sin `ensure` en `server.cfg`, sin entrada en el catálogo `resources.json`, sin submódulo.
