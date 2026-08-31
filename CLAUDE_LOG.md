@@ -1,5 +1,27 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-08-31 — Proyecto Voz: rama experimental para voz nativa de Enhanced · Claude
+
+**Contexto:** al pulsar la tecla de ciclar proximidad (`GRAVE`), el juego crashea con timeout —
+investigado en detalle (ver hilo de conversación, resumen en `VOZ.md`). Causa más probable:
+`pma-voice` corre entero sobre las natives de Mumble vía el parche de compatibilidad
+`sv_mumble true`, que la propia documentación de Cfx.re marca como deprecado y no soportado de
+forma robusta en Enhanced — no una vía first-class. Confirmado además que Enhanced trae un
+sistema de voz nativo propio (`voice_internal` + natives `CreateVoiceChannel`,
+`AddPlayerToVoiceChannel`, etc.), sin servidor aparte, pero **sin ningún recurso comunitario que
+ya lo use** todavía.
+
+**Decisión (Oscar):** en vez de seguir parcheando sobre Mumble o migrar a un sistema basado en
+TeamSpeak (SaltyChat/YaCA/TokoVOIP — exigiría licencia de slots + servidor TS3 aparte, coste
+recurrente real, ver `VOZ.md`), construir nuestro propio `pma-voice` sobre la API nativa de
+Enhanced, replicando los exports que ya consumen otros recursos (`qbx_phone`, `src-payphone`,
+`qbx_adminmenu`, `ps-mdt`) para no tener que tocarlos.
+
+**Hecho:** rama `crp-voz-experimental` creada desde `cachoporp` — se trabaja aquí sin tocar la
+rama de producción hasta tener algo probado en vivo. Ver `VOZ.md` para el plan completo.
+
+---
+
 ## 2026-08-30 (2) — Aviso "Mumble native functions are deprecated" — esperado, sin acción · Claude
 
 **Reportado:** en consola aparece `The Mumble native functions are deprecated and will be
