@@ -40,6 +40,18 @@ Confirmado contra la documentación oficial (`docs.fivem.net/docs/scripting-manu
   tiene que crear el canal y gestionar altas/bajas. Por eso sigue haciendo falta un recurso.
 - **Sin ningún recurso comunitario ya migrado** encontrado (búsqueda 2026-08-31) — de ahí que
   construyamos el nuestro en vez de adoptar uno de terceros.
+- **Activación** — server-side, en `server.cfg`: `setr voice_internal` (voz gestionada dentro del
+  propio FXServer, sin proceso/servidor aparte). También existe `voice_external_host`/
+  `voice_external_connect` (servidor de voz externo, marcado como **experimental** en la
+  documentación, con clave de licencia que debe coincidir en ambos lados) — no aplica a nuestro
+  caso, no hace falta escalar a un proceso separado.
+- **Calidad de audio de fábrica** (no había que construirlo nosotros): cancelación de ruido y de
+  eco, y manejo gradual de pérdida de paquetes — mejor que lo que ofrecía Mumble por defecto.
+- `sv_mumble true` sigue existiendo solo por compatibilidad hacia atrás y la propia documentación
+  advierte que permite "client-controlled voice channels" (el cliente decide a qué canal
+  pertenece) — justo el modelo de seguridad que la API nueva elimina a propósito, moviendo todo el
+  control de membership/mute/deaf al servidor. Confirma que no es solo una migración de APIs, es
+  también un problema real de seguridad que arreglamos de paso.
 
 ## Alternativas descartadas (y por qué)
 
@@ -102,3 +114,25 @@ confirmado en vivo:
 Enhanced — o se activa `sv_mumble` y crashea, o se desactiva y no hay voz. Confirma que la
 migración a la API nativa (este proyecto) no es una mejora opcional, es la única forma de tener
 voz funcional y estable en Enhanced con lo que tenemos hoy.
+
+**2026-08-31 (3) — Confirmado en consola: sin backend de voz activo.** El cliente reporta
+`Network voice initialization disabled` al conectar — mensaje esperable, ya documentado arriba:
+ni `sv_mumble` (desactivado a propósito) ni `voice_internal` (nunca llegó a activarse en
+`server.cfg`) están corriendo, así que no hay ningún backend. Oscar va a añadir `setr
+voice_internal` al `server.cfg` de `FiveM-Enhanced` — eso por sí solo NO da proximidad/radios/
+llamadas (ver arriba, no hay nada automático de fábrica), pero es el primer paso obligatorio antes
+de que el recurso nuevo de este proyecto pueda crear canales con `CreateVoiceChannel`.
+
+**2026-08-31 (4) — Resuelto sin migración: faltaba `voice_internal` junto a `sv_mumble true`.**
+Añadidas ambas convars en `FiveM-Enhanced/config/server.cfg` (línea `voice_internal` sin `setr`,
+más `setr sv_mumble true` reactivado). Oscar confirma en vivo: la voz funciona, y la tecla GRAVE
+(`cycleproximity`) — la que originaba el crash — **ya no crashea** con ambas convars activas a la
+vez. El crash original no era `sv_mumble true` en solitario, era la falta de `voice_internal`
+(sin el motor nativo activado, las natives de Mumble deprecadas quedaban en un estado no
+soportado). Incidente cerrado.
+
+**Proyecto Voz queda aparcado** — la combinación actual resuelve el problema real (crash + sin
+voz) sin necesidad de reescribir `pma-voice`. Se retoma este proyecto solo si hace falta de
+verdad más adelante (el crash reaparece, o se quiere cerrar el hueco de seguridad de
+client-controlled voice channels que sigue existiendo mientras `sv_mumble true` esté activo — ver
+sección "Qué trae Enhanced en su lugar" arriba).
