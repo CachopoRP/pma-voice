@@ -88,3 +88,17 @@ comando `+radiotalk`/`-radiotalk` para PTT), ninguno de estos 4 recursos necesit
 ## Estado
 
 **2026-08-31** — Rama `crp-experimental` creada desde `cachoporp`. Sin código nuevo todavía.
+
+**2026-08-31 (2) — Crash confirmado en vivo, causa = `sv_mumble true`.** Oscar quitó
+`sv_mumble true` en caliente vía txAdmin (cambio no reflejado todavía en el `server.cfg`
+trackeado de `FiveM-Enhanced` — pendiente de decidir y aplicar en el repo). Resultado
+confirmado en vivo:
+- **Sin `sv_mumble`:** la tecla de proximidad (`GRAVE`) ya NO crashea el juego.
+- **Pero:** la voz no funciona en absoluto (los jugadores no se oyen) — esperable, ya que
+  `sv_mumble true` es justo lo que mantiene operativas las natives de Mumble que usa
+  `pma-voice` por debajo.
+
+**Conclusión:** con la arquitectura actual (`pma-voice` sobre Mumble) no hay término medio en
+Enhanced — o se activa `sv_mumble` y crashea, o se desactiva y no hay voz. Confirma que la
+migración a la API nativa (este proyecto) no es una mejora opcional, es la única forma de tener
+voz funcional y estable en Enhanced con lo que tenemos hoy.
