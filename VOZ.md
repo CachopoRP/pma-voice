@@ -4,8 +4,9 @@
 > corriendo sobre el parche de compatibilidad `sv_mumble true`) a la API de voz nativa de GTAV
 > Enhanced (`voice_internal` + `CreateVoiceChannel`/`AddPlayerToVoiceChannel`/...). No confundir
 > con `CLAUDE_LOG.md` (historial de cambios ya hechos) — este es el plan/estado del proyecto,
-> mismo criterio que `VINEWAVE.md` en `qbx_phone`. Se trabaja en la rama `crp-voz-experimental`,
-> sin tocar `cachoporp` (producción) hasta tener algo probado en vivo.
+> mismo criterio que `VINEWAVE.md` en `qbx_phone`. Se trabaja en la rama `crp-experimental`
+> (nombre de convención de todo el catálogo, lo exige `deploy-experimental.yml`), sin tocar
+> `cachoporp` (producción) hasta tener algo probado en vivo.
 
 ## Por qué
 
@@ -86,4 +87,4 @@ comando `+radiotalk`/`-radiotalk` para PTT), ninguno de estos 4 recursos necesit
 
 ## Estado
 
-**2026-08-31** — Rama `crp-voz-experimental` creada desde `cachoporp`. Sin código nuevo todavía.
+**2026-08-31** — Rama `crp-experimental` creada desde `cachoporp`. Sin código nuevo todavía.

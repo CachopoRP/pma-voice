@@ -17,7 +17,8 @@ recurrente real, ver `VOZ.md`), construir nuestro propio `pma-voice` sobre la AP
 Enhanced, replicando los exports que ya consumen otros recursos (`qbx_phone`, `src-payphone`,
 `qbx_adminmenu`, `ps-mdt`) para no tener que tocarlos.
 
-**Hecho:** rama `crp-voz-experimental` creada desde `cachoporp` — se trabaja aquí sin tocar la
+**Hecho:** rama `crp-experimental` creada desde `cachoporp` (nombre de convención, requisito de
+`deploy-experimental.yml`) — se trabaja aquí sin tocar la
 rama de producción hasta tener algo probado en vivo. Ver `VOZ.md` para el plan completo.
 
 ---
