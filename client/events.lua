@@ -2,7 +2,15 @@ isInitialized = false
 
 function handleInitialState()
 	local voiceModeData = Cfg.voiceModes[mode]
-	MumbleSetTalkerProximity(voiceModeData[1] + 0.0)
+	-- Fase 2 de Proyecto Voz (ver VOZ.md): con native proximity, el radio de
+	-- audicion lo da la pertenencia al canal nativo del tramo, no el radio de
+	-- Mumble -- ponerlo a 0 evita que la proximidad "de base" del engine se
+	-- solape con el canal nativo (doble audio).
+	local useNativeProximity = GetConvarInt('voice_useNativeProximity', 0) == 1
+	MumbleSetTalkerProximity(useNativeProximity and 0.0 or (voiceModeData[1] + 0.0))
+	if useNativeProximity then
+		TriggerServerEvent('pma-voice:server:joinNativeProximityTier', mode)
+	end
 	MumbleClearVoiceTarget(voiceTarget)
 	MumbleSetVoiceTarget(voiceTarget)
 	MumbleSetVoiceChannel(LocalPlayer.state.assignedChannel)

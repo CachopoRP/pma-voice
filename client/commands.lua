@@ -34,7 +34,16 @@ end)
 
 function setProximityState(proximityRange, isCustom)
 	local voiceModeData = Cfg.voiceModes[mode]
-	MumbleSetTalkerProximity(proximityRange + 0.0)
+	-- Fase 2 de Proyecto Voz (ver VOZ.md): ver comentario igual en events.lua.
+	local useNativeProximity = GetConvarInt('voice_useNativeProximity', 0) == 1
+	MumbleSetTalkerProximity(useNativeProximity and 0.0 or (proximityRange + 0.0))
+	if useNativeProximity and not isCustom then
+		-- Los tramos custom (overrideProximityRange) no tienen canal nativo
+		-- fijo -- esos exports los usan otros recursos para casos puntuales
+		-- (ver VOZ.md, exports a preservar) y por ahora se quedan sin canal
+		-- nativo hasta decidir si les hace falta uno propio.
+		TriggerServerEvent('pma-voice:server:joinNativeProximityTier', mode)
+	end
 	LocalPlayer.state:set('proximity', {
 		index = mode,
 		distance = proximityRange,

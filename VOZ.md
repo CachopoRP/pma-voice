@@ -203,9 +203,18 @@ respondieron correctamente de punta a punta:
 ```
 Comando de prueba ya retirado del código. Vía libre para Fase 2.
 
-### Fase 2 — Proximidad nativa — 🔧 construido en modo aislado 2026-09-01, pendiente de prueba en vivo
+### Fase 2 — Proximidad nativa — 🔧 cableada de verdad 2026-09-01, detrás de convar apagada por defecto, pendiente de prueba en vivo
 Migrar `client/init/proximity.lua` de las natives de Mumble a canales espaciales nativos
 (`CreateVoiceChannel(1, distancia)`).
+
+**Motivación reforzada:** la doc oficial de voice para GTAV Enhanced avisa de que `sv_mumble`
+(necesaria hoy para que las natives Mumble deprecadas sigan funcionando) *"allows client-controlled
+voice channels. Any client can join any channel and listen to any conversation."* — un cliente
+modificado puede en teoría unirse a cualquier canal y escuchar cualquier conversación mientras
+`sv_mumble` siga activa. El objetivo final de Proyecto Voz es migrar TODO (proximidad, llamadas,
+radios, mute/deaf) a las natives de canal nuevas para poder apagar `sv_mumble` del todo y cerrar
+ese hueco. `sv_mumble` es una única convar de servidor — no se puede apagar "por fases", solo
+cuando las Fases 2-5 estén TODAS confirmadas en vivo y promovidas a producción.
 
 **Ajuste de diseño frente a la idea original del plan:** `MumbleSetTalkerProximity` es un radio
 que cada CLIENTE ajusta por su cuenta; `CreateVoiceChannel` es un canal del SERVIDOR con un único
@@ -218,23 +227,34 @@ actual, meterlo en el del nuevo) en vez de "cambiar el radio de un canal". Mismo
 "pocos canales fijos y de larga duración" que ya recomendaba la Fase 1 para acotar el problema de
 canales huérfanos al reiniciar.
 
-Construido **aislado**, igual que la Fase 1: `client/init/proximity.lua` (el camino real, sobre
-Mumble) no se ha tocado. Exports nuevos: `joinNativeProximityTier(source, tierIndex)`,
-`leaveNativeProximity(source)`. Comando de prueba manual: `/testnativeproximity <tramo 1-3>
-[serverId]`.
+**Cableado real, pero detrás de la convar `voice_useNativeProximity` (0 por defecto, o sea
+apagada):**
+- `client/events.lua` (`handleInitialState`, se llama al conectar y al volver de una llamada) y
+  `client/commands.lua` (`setProximityState`, se llama al ciclar F11/GRAVE): con la convar activa,
+  ponen `MumbleSetTalkerProximity(0)` (para que la proximidad "de base" del engine no se solape con
+  el canal nativo) y avisan al servidor (`pma-voice:server:joinNativeProximityTier`) del tramo
+  actual.
+- `client/init/proximity.lua` (`addNearbyPlayers`): con la convar activa, se salta el bucle que
+  añadía a cada jugador cercano como target de Mumble (el canal nativo ya hace la caída por
+  distancia solo) — el bucle de llamadas (`callData`) sigue igual, eso es Fase 3.
+- `client/init/proximity.lua` (`exports("setVoiceState", ...)`): al entrar en una llamada, el
+  jugador sale de su canal nativo de proximidad (`pma-voice:server:leaveNativeProximity`) para no
+  oír de fondo a la gente cercana mientras dura la llamada; al volver, `handleInitialState` lo
+  vuelve a meter en su tramo.
+- Con la convar en 0 (default), absolutamente nada de esto se ejecuta — el camino real sigue siendo
+  100% Mumble, igual que hoy. Cero riesgo hasta que se active a propósito.
 
-**Pendiente antes de dar la Fase 2 por buena** (mismo criterio que Fase 0/1 — probar en vivo antes
-de seguir):
-1. Confirmar que los 3 canales se crean al arrancar (log `[native_proximity] Tramo N (...) -> canal
-   nativo N` en consola).
-2. Con 2 jugadores conectados, usar `/testnativeproximity <tramo>` en cada uno y comprobar que se
-   oyen o no según el tramo y la distancia real entre ellos (los canales nativos NO hacen sonar
-   nada por sí solos si ninguno los ha probado — hace falta la prueba manual en vivo, no basta con
-   ver el log del servidor).
-3. Decidir cómo convive esto con el camino real: ¿el jugador entra en su canal de tramo nativo
-   ADEMÁS de la proximidad de Mumble (doble audio, a evitar) o se apaga `MumbleSetTalkerProximity`
-   para ese jugador mientras el canal nativo esté activo? Esto se decide después de confirmar el
-   punto 2, no antes.
+**Cómo probarlo en vivo** (mismo criterio que Fase 0/1 — confirmar antes de promover):
+1. En `crp-experimental` (nunca en `cachoporp` todavía): `setr voice_useNativeProximity 1` en el
+   `server.cfg` de ese entorno, `restart pma-voice`.
+2. Confirmar que los 3 canales se crean al arrancar (log `[native_proximity] Tramo N (...) -> canal
+   nativo N`).
+3. Con 2 jugadores conectados, comprobar que se oyen o no según la distancia real y el tramo actual
+   (F11/GRAVE para ciclar) — sin doble audio, sin eco.
+4. Probar una llamada de teléfono mientras tanto: confirmar que durante la llamada NO se oye
+   proximidad nativa de fondo, y que al colgar la proximidad vuelve sola.
+5. Solo si 2-4 salen limpios: promover (mismo convar en `cachoporp`) y repetir la prueba ahí antes
+   de dar la Fase 2 por definitivamente buena.
 
 ### Fase 3 — Llamadas de teléfono
 La pieza que motiva retomar el proyecto ahora mismo. Canal aislado por llamada

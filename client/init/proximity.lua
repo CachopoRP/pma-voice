@@ -47,6 +47,14 @@ function addNearbyPlayers()
 		end
 	end
 
+	-- Fase 2 de Proyecto Voz (ver VOZ.md): con voice_useNativeProximity activa,
+	-- la proximidad base ya no se hace anadiendo a cada jugador cercano como
+	-- target de Mumble -- el jugador pertenece a un canal nativo espacial fijo
+	-- (uno por tramo, ver server/module/native_proximity.lua) y el engine se
+	-- encarga solo de la caida por distancia dentro de ese canal. El bucle de
+	-- arriba (callData / llamadas) sigue igual, eso todavia no ha migrado.
+	if GetConvarInt('voice_useNativeProximity', 0) == 1 then return end
+
 	local players = GetActivePlayers()
 	for i = 1, #players do
 		local ply = players[i]
@@ -193,6 +201,15 @@ exports("setVoiceState", function(_voiceState, channel)
 	end
 	voiceState = _voiceState
 	if voiceState == "channel" then
+		-- Fase 2 de Proyecto Voz (ver VOZ.md): al entrar en una llamada el
+		-- jugador deja su canal nativo de proximidad -- si no, seguiria oyendo
+		-- a la gente cercana de fondo (doble audio) mientras dura la llamada.
+		-- addNearbyPlayers() ya deja de correr en este estado (el bucle
+		-- principal solo la llama si voiceState == "proximity"), pero la
+		-- pertenencia al canal nativo es aparte y no se limpia sola.
+		if GetConvarInt('voice_useNativeProximity', 0) == 1 then
+			TriggerServerEvent('pma-voice:server:leaveNativeProximity')
+		end
 		type_check({ channel, "number" })
 		-- 65535 is the highest a client id can go, so we add that to the base channel so we don't manage to get onto a players channel
 		channel = channel + 65535

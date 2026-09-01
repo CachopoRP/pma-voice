@@ -74,6 +74,19 @@ AddEventHandler('playerDropped', function()
 	leaveNativeProximity(source)
 end)
 
+-- Disparados por el cliente (client/events.lua, client/commands.lua,
+-- client/init/proximity.lua) cuando voice_useNativeProximity esta activa --
+-- ver Fase 2 en VOZ.md.
+RegisterNetEvent('pma-voice:server:joinNativeProximityTier', function(tierIndex)
+	local source = source
+	joinNativeProximityTier(source, tierIndex)
+end)
+
+RegisterNetEvent('pma-voice:server:leaveNativeProximity', function()
+	local source = source
+	leaveNativeProximity(source)
+end)
+
 CreateThread(function()
 	-- despues de native_channels.lua (mismo recurso, sin orden garantizado
 	-- entre archivos server_scripts salvo el orden del fxmanifest) -- espera
