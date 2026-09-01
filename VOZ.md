@@ -136,3 +136,102 @@ voz) sin necesidad de reescribir `pma-voice`. Se retoma este proyecto solo si ha
 verdad más adelante (el crash reaparece, o se quiere cerrar el hueco de seguridad de
 client-controlled voice channels que sigue existiendo mientras `sv_mumble true` esté activo — ver
 sección "Qué trae Enhanced en su lugar" arriba).
+
+**2026-09-01 — Retomado: las llamadas de teléfono no funcionan de verdad.** Confirmado en vivo
+(Oscar + Jose se oyen por proximidad, pero la llamada de teléfono entre ellos no conecta).
+Investigado contra la documentación oficial, sección **"Limitations of the compatibility
+layer"**:
+
+> `MUMBLE_CLEAR_VOICE_TARGET`, `MUMBLE_SET_VOICE_TARGET`, and any natives that accept voice
+> targets behave as if there is only a single voice target.
+
+`pma-voice` construye tanto llamadas como radios sobre exactamente esas natives
+(`MumbleAddVoiceTargetPlayerByServerId`, `client/init/main.lua:toggleVoice`/`addVoiceTargets`) —
+con `voice_internal` activo, esa capa de compatibilidad queda degradada a un solo target
+simultáneo, así que el "apuntado" de audio a alguien fuera de proximidad (justo lo que hace
+falta para una llamada) no es fiable. La documentación no ofrece ningún convar ni workaround —
+avisan de que van a **eliminar del todo** las natives de Mumble en el futuro. Ya no es "por si
+acaso", es la única vía real y duradera.
+
+## Plan de migración por fases
+
+Objetivo: sustituir el motor de `pma-voice` (Mumble deprecado) por las natives nativas de
+Enhanced, **sin tocar la superficie pública** (exports/eventos/comandos de la tabla de arriba),
+para que `src-payphone`, `qbx_phone`, `qbx_adminmenu` y `ps-mdt` sigan funcionando sin cambios.
+Proximidad ya funciona hoy (vía `voice_internal` + `sv_mumble true`) — el resto no, o no de forma
+fiable.
+
+### Fase 0 — Verificación en vivo de las natives nuevas
+Antes de escribir nada real: comprobar en `crp-experimental` que `CreateVoiceChannel` y el resto
+de natives de canal (`AddPlayerToVoiceChannel`, `RemovePlayerFromVoiceChannel`,
+`SetPlayerMutedInVoiceChannel`, `SetPlayerDeafInVoiceChannel`, `DeleteVoiceChannel`) existen de
+verdad en el build actual del server — documentadas en la guía oficial, pero **no aparecen en el
+índice general de natives** (`natives.json`), así que hace falta confirmarlo con una prueba
+mínima (crear un canal, meter dos jugadores, comprobar que se oyen) antes de comprometerse al
+resto del plan. Si no existen todavía en este build, el proyecto se replantea entero.
+
+### Fase 1 — Núcleo de canales (server)
+Módulo nuevo, propio de este proyecto (no toca `server/module/radio.lua` ni `phone.lua`
+existentes todavía): una capa fina sobre las natives de canal — crear/borrar canales, llevar la
+cuenta de qué canal RAGE (`CreateVoiceChannel`) corresponde a qué "canal lógico" nuestro (número
+de radio, ID de llamada, proximidad). Sin esto, las fases siguientes no tienen dónde apoyarse.
+
+### Fase 2 — Proximidad nativa
+Migrar `client/init/proximity.lua` de las natives de Mumble a un único canal espacial
+(`CreateVoiceChannel(1, distancia)`) que se cicla de rango con la tecla `GRAVE` (sustituye a
+`cycleproximity`). Menor riesgo — ya sabemos que la proximidad funciona hoy vía el shim de
+Mumble, así que hay margen para comparar comportamiento antes/después en vivo.
+
+### Fase 3 — Llamadas de teléfono
+La pieza que motiva retomar el proyecto ahora mismo. Canal aislado por llamada
+(`CreateVoiceChannel(0, ...)`, no espacial), altas/bajas vía `AddPlayerToVoiceChannel`/
+`RemovePlayerFromVoiceChannel`. Mismos exports (`addPlayerToCall`/`removePlayerFromCall`) para
+que `src-payphone` y `qbx_phone/client/feature/notification.lua` no necesiten ningún cambio.
+
+### Fase 4 — Radios
+La pieza más grande. Un canal no-espacial por número de radio, PTT (`+radiotalk`/`-radiotalk`),
+múltiples canales simultáneos si se puede (a valorar frente a "TODO: permitir multi-canal" que
+ya está anotado en el `server/module/radio.lua` actual). Mismos exports que hoy
+(`setPlayerRadio`/`getPlayersInRadioChannel`/`setRadioChannel`) para que `qbx_adminmenu` y la
+abstracción multi-sistema de `ps-mdt` (`Config.Radio.VoiceSystem`) sigan funcionando sin tocarlas.
+
+### Fase 5 — Mute/deaf de admin
+Con las natives nuevas esto es casi gratis (`SetPlayerMutedInVoiceChannel`/
+`SetPlayerDeafInVoiceChannel` de fábrica, sin simular volumen a mano como hacía el shim de
+Mumble). Se hace justo después de radios porque reutiliza los mismos canales ya creados en la
+Fase 4.
+
+### Fase 6 — Efecto de estática de radio + UI
+Migrar `client/init/submix.lua` (hoy usa `MumbleSetSubmixForServerId`, hay que confirmar si el
+motor nativo tiene equivalente o si hace falta otra vía) y valorar reutilizar el HTML/JS de
+`pma-voice` tal cual para el indicador de "quién habla" (no depende de Mumble, solo consume
+eventos NUI).
+
+### Fase 7 — 🔊 Megáfono (función nueva, la idea que le gustó a Oscar)
+No existe en `pma-voice` original — se construye desde cero sobre el motor nuevo, aprovechando
+que ya tenemos canales espaciales con radio configurable:
+
+- **Mecánica**: un comando/item (a decidir: item craftable, o restringido a `police`/`ems` como
+  `ps-mdt` ya distingue por job) mete al jugador en un **segundo canal espacial temporal**
+  (`CreateVoiceChannel(1, radioAmpliado)`, radio bastante mayor que la proximidad normal — p.ej.
+  30-50m frente a los ~5-15m habituales) mientras está activo, sin sacarlo de su canal de
+  proximidad normal (para playd que sigan usando radio/llamada con normalidad a la vez).
+- **Efecto de sonido**: `SetAudioSubmixEffectRadioFx` (confirmado real, ver arriba) sobre el
+  submix del jugador mientras el megáfono está activo — mismo mecanismo que ya usa el efecto de
+  estática de radio (Fase 6), solo que aplicado a proximidad ampliada en vez de a un canal de
+  radio. Da el sonido característico de "voz por altavoz" a quien lo oye.
+- **Activación**: tecla mantenida o toggle (a decidir con Oscar) + notificación en pantalla
+  mientras está activo, para que el propio jugador sepa que se le oye más lejos y distorsionado.
+- **Sin depender de animación/prop de terceros**: los `.ycd` de megáfono que hay en el catálogo
+  (`rpemotes-reborn`, `scully_emotemenu`) son assets de esos recursos de emotes, no de
+  `pma-voice` — si se quiere un prop/animación visual, se dispara como llamada opcional a esos
+  recursos (acoplamiento débil, ver si tienen export), nunca como dependencia dura de este
+  proyecto. El mecanismo de voz funciona igual con o sin animación.
+- Riesgo bajo de romper nada existente — es aditivo, no modifica proximidad/radio/llamadas.
+
+### Fase 8 — Pruebas en vivo y despliegue progresivo
+Cada fase se prueba en `crp-experimental` antes de pasar a la siguiente (mismo criterio que el
+resto de "Proyecto Savia" — no se fusiona a `cachoporp` hasta confirmar en vivo). Orden de
+despliegue sugerido: Fase 2 (proximidad, ya validada hoy, menor riesgo de sorpresas) → Fase 3
+(llamadas, el problema real de hoy) → Fase 4+5 (radios, la pieza grande) → Fase 6 (pulido) →
+Fase 7 (megáfono, cuando el resto esté estable).
