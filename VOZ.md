@@ -53,6 +53,66 @@ Confirmado contra la documentación oficial (`docs.fivem.net/docs/scripting-manu
   control de membership/mute/deaf al servidor. Confirma que no es solo una migración de APIs, es
   también un problema real de seguridad que arreglamos de paso.
 
+## 📄 Documentación oficial completa de la nueva API de voz (pegada por Oscar 2026-09-01)
+
+Referencia guardada íntegra porque no está indexada donde la buscamos al principio del
+proyecto (ver corrección a Fase 0 más abajo) y es la base de todo el resto del plan.
+**Consultar esto antes de asumir nada sobre el comportamiento de las natives.**
+
+### ConVars eliminadas en Enhanced (⚠️ afecta a `shared.lua` de pma-voice)
+
+> The following ConVars from the Mumble system are no longer available in FiveM for GTAV
+> Enhanced: `voice_use2dAudio`, `voice_use3dAudio`, `voice_useSendingRangeOnly`,
+> `voice_useNativeAudio`.
+
+`shared.lua:47` sigue leyendo `voice_useNativeAudio` para elegir entre dos tablas de
+`Cfg.voiceModes` (1.5/3/6 "audio nativo" vs 3/7/15 normal) y `client/init/proximity.lua:15` lo
+usa para un multiplicador ×3 en `orig_addProximityCheck`. **Como el convar ya no existe en el
+engine, `GetConvar` solo devuelve lo que haya puesto a mano en el `server.cfg` (`true`) sin
+ningún efecto real en el motor** — la rama "audio nativo" es un vestigio muerto en Enhanced, no
+algo calibrado a propósito para este engine (era una distinción real en Legacy/Gen8, no aquí).
+Pendiente: recalibrar `Cfg.voiceModes` sin depender de este convar.
+
+### Modos de canal, confirmados oficialmente
+
+| Modo | Nombre | Comportamiento oficial |
+|---|---|---|
+| `0` | Non-spatial | 2D. El posicionamiento 2D lo controla la API de voz de cliente. Quién recibe se calcula por pertenencia al canal — todos oyen a todos igual, sin caída por distancia. Ideal para radios/llamadas. |
+| `1` | Spatial | 3D automático, el engine posiciona el audio de cada miembro solo. **"Receiving clients are calculated based on proximity within maxDistance"** — el propio engine decide quién recibe según la distancia real al `maxDistance` del canal, no es solo atenuación. |
+| `2` | Custom | Requiere streaming propio. Sin API todavía para alimentarlo (no usar en este proyecto). |
+| `3` | Temporary | **Hereda todo el comportamiento de Spatial, pero el canal se autoborra cuando se queda vacío.** Resuelve la fuga de canales para diseños tipo "un canal por jugador/conversación" sin necesitar `onResourceStop`. |
+
+Ejemplo oficial citado en la doc: `CreateVoiceChannel(1, 15.0)` para "a 3D proximity channel
+that hears speakers within 15.0 units" — un canal de proximidad normal ronda los 15.0 de
+`maxDistance`, muy lejos de los 1.5/3/6 que usa hoy la rama muerta de `voice_useNativeAudio`.
+
+### Otros detalles confirmados que corrigen suposiciones ya escritas en este proyecto
+
+- **La limpieza al desconectar es automática del engine**: *"When a player disconnects, they
+  are automatically removed from all channels they were in."* — el bucle `playerDropped` que ya
+  tenemos en `native_channels.lua`/`native_proximity.lua` es redundante (inofensivo, pero no
+  hace falta para que funcione).
+- **`AddPlayerToVoiceChannel` sobre alguien ya presente resetea su estado muted/deaf** — cuidado
+  si se usa para "refrescar" membership, cualquier mute/deaf manual puesto antes se pierde.
+- **`DeleteVoiceChannel` funciona con el canal vacío o no** — no hace falta vaciarlo antes de
+  borrarlo.
+- IDs de canal empiezan en `0`, máximo 65535 canales, `65535` de vuelta = sin canales libres
+  (ya coincide con el check que tenemos en `native_channels.lua:28`).
+- El equivalente 1:1 de radios/walkie con la API nueva es un único script server-side (ejemplo
+  completo en la doc, con `getOrCreateChannel`/`leaveAllChannels` sobre canales modo `0`) — nos
+  sirve como plantilla directa para la Fase de radios (`server/module/radio.lua` nuevo).
+- Escuchar sin poder hablar (equivalente a `MumbleAddVoiceChannelListen`) = meter al jugador con
+  `AddPlayerToVoiceChannel` y luego `SetPlayerMutedInVoiceChannel(..., true)`.
+
+### Corrección a "Fase 0" (más abajo en este documento)
+
+Donde dice que las natives "no aparecen en el índice general de natives (`natives.json`)" —
+correcto que no están ahí, pero **sí están documentadas oficialmente**, solo que en la guía en
+prosa de voz de `docs.fivem.net` (sección "FiveM for GTAV Enhanced"), no en el índice
+autogenerado de natives clásico que se busca con las herramientas de lookup habituales. No es
+una API no soportada ni experimental — es la vía oficial y recomendada, con ejemplos completos
+de radio incluidos. Corrige la cautela que veníamos arrastrando desde el inicio del proyecto.
+
 ## Alternativas descartadas (y por qué)
 
 - **Seguir en `sv_mumble true`**: es lo que causa el crash de hoy. Descartado.
@@ -203,7 +263,30 @@ respondieron correctamente de punta a punta:
 ```
 Comando de prueba ya retirado del código. Vía libre para Fase 2.
 
-### Fase 2 — Proximidad nativa — 🔧 cableada de verdad 2026-09-01, detrás de convar apagada por defecto, pendiente de prueba en vivo
+### Fase 2 — Proximidad nativa — 🔧 reescrita ("burbuja por jugador") 2026-09-01 (2), detrás de convar apagada por defecto, pendiente de prueba en vivo
+
+**Reescritura 2026-09-01 (2) tras probar en vivo el diseño v1 (3 canales fijos compartidos):**
+el resultado en vivo fue que los 3 tramos sonaban exactamente igual (audible y atenuado hasta
+~20m incluso en Susurro) — pegado en este documento contra la "Documentación oficial completa"
+de arriba, la causa más probable NO era la native (que sí documenta filtrar por `maxDistance`),
+sino que un radio compartido por TODOS los que estuvieran en un tramo a la vez no puede modelar
+un radio *por hablante* (que es como funciona `MumbleSetTalkerProximity` de verdad). Rediseñado
+como **"burbuja por jugador"**: cada jugador activo tiene su propio canal `TEMPORARY` (hereda
+todo el comportamiento `SPATIAL` + se autoborra al vaciarse, confirmado oficialmente — ver
+"Documentación oficial completa" arriba), con `maxDistance` = el radio de SU tramo actual. Todos
+los demás jugadores activos son miembros de esa burbuja; el engine decide solo, en vivo, quién
+está lo bastante cerca para recibir audio — sin polling de posición nuestro, el canal "sigue" al
+jugador automáticamente (confirmado por la doc). Al ciclar de tramo (no existe native para
+cambiar el `maxDistance` de un canal ya creado) se borra la burbuja vieja y se crea una nueva con
+el radio correcto, repoblada con los mismos miembros — esto pasa solo al cambiar de tramo
+(evento), no en un bucle. Implementado en `server/module/native_proximity.lua` (reescrito
+íntegro). `onResourceStop` en `native_channels.lua` purga todos los canales (burbujas incluidas)
+si se reinicia solo el recurso — ver "Documentación oficial completa" arriba.
+
+`Cfg.voiceModes` (`shared.lua`) recalibrado de paso: la rama "audio nativo" (1.5/3/6) dependía de
+`voice_useNativeAudio`, que la doc oficial confirma **eliminada en Enhanced** — vestigio muerto,
+no una calibración real. Tabla única ahora: Susurro 2.0 / Normal 6.0 / Grito 15.0 (sobre el
+ejemplo oficial de `CreateVoiceChannel(1, 15.0)`).
 Migrar `client/init/proximity.lua` de las natives de Mumble a canales espaciales nativos
 (`CreateVoiceChannel(1, distancia)`).
 
@@ -256,18 +339,55 @@ apagada):**
 5. Solo si 2-4 salen limpios: promover (mismo convar en `cachoporp`) y repetir la prueba ahí antes
    de dar la Fase 2 por definitivamente buena.
 
-### Fase 3 — Llamadas de teléfono
-La pieza que motiva retomar el proyecto ahora mismo. Canal aislado por llamada
-(`CreateVoiceChannel(0, ...)`, no espacial), altas/bajas vía `AddPlayerToVoiceChannel`/
-`RemovePlayerFromVoiceChannel`. Mismos exports (`addPlayerToCall`/`removePlayerFromCall`) para
-que `src-payphone` y `qbx_phone/client/feature/notification.lua` no necesiten ningún cambio.
+### Fase 3 — Llamadas de teléfono — 🔧 cableada 2026-09-01 (2), detrás de `voice_useNativeCalls` (0 por defecto), pendiente de prueba en vivo
+Motivación exacta: la doc oficial confirma que con `voice_internal` la capa de compatibilidad
+degrada `MUMBLE_SET_VOICE_TARGET`/`MUMBLE_CLEAR_VOICE_TARGET` a "as if there is only a single
+voice target" — justo lo que usaban las llamadas, de ahí que no conectaran de verdad (ver entrada
+2026-09-01 más arriba). Implementado en `server/module/phone.lua`: un canal `NON_SPATIAL`
+(`CreateVoiceChannel(0, 0.0)`) por llamada activa, creado al primer `addPlayerToCall` y borrado
+cuando se vacía (nada de voice targets, la pertenencia al canal ya basta). `client/module/
+phone.lua` se salta `addVoiceTargets`/`MumbleClearVoiceTargetPlayers` cuando la convar está
+activa — `toggleVoice` (submix/volumen, cosmético) se mantiene igual. Mismos exports
+(`addPlayerToCall`/`removePlayerFromCall`) sin tocar, `src-payphone` y `qbx_phone/client/feature/
+notification.lua` no necesitan ningún cambio.
 
-### Fase 4 — Radios
-La pieza más grande. Un canal no-espacial por número de radio, PTT (`+radiotalk`/`-radiotalk`),
-múltiples canales simultáneos si se puede (a valorar frente a "TODO: permitir multi-canal" que
-ya está anotado en el `server/module/radio.lua` actual). Mismos exports que hoy
+### Fase 4 — Radios — 🔧 cableada 2026-09-01 (2), detrás de `voice_useNativeRadio` (0 por defecto), pendiente de prueba en vivo
+Un canal `NON_SPATIAL` fijo por frecuencia realmente usada (creado en el primer `setPlayerRadio`
+a esa frecuencia, no una de más), implementado en `server/module/radio.lua`. PTT
+(`+radiotalk`/`-radiotalk`) sigue disparando `pma-voice:setTalkingOnRadio` al servidor exactamente
+igual que hoy — con la convar activa, el servidor traduce ese evento a
+`SetPlayerMutedInVoiceChannel` (silenciado por defecto al entrar al canal, destapado mientras se
+mantiene pulsado) en vez de que el cliente ande apuntando voice targets de Mumble. `client/
+module/radio.lua` se salta `addVoiceTargets`/`MumbleClearVoiceTargetPlayers` cuando la convar
+está activa; toda la lógica de UI, animación y mic-clicks queda intacta. Mismos exports que hoy
 (`setPlayerRadio`/`getPlayersInRadioChannel`/`setRadioChannel`) para que `qbx_adminmenu` y la
 abstracción multi-sistema de `ps-mdt` (`Config.Radio.VoiceSystem`) sigan funcionando sin tocarlas.
+Pendiente (no bloqueante para probar en vivo): `getPlayersInRadioChannel` y el multi-canal
+simultáneo (`TODO` ya anotado en el archivo original) siguen sin tocar, funcionan igual que hoy.
+
+### Cómo probar Fases 2-4 en vivo (2026-09-01 (2), todavía sin probar)
+
+En `crp-experimental` únicamente, nunca en `cachoporp`:
+
+1. `setr voice_useNativeProximity 1`, `setr voice_useNativeRadio 1`, `setr voice_useNativeCalls 1`
+   en el `server.cfg` de ese entorno (las tres convars son independientes, se pueden activar/
+   probar por separado si se prefiere ir paso a paso). `restart pma-voice`.
+2. Proximidad: con `voice_debugMode 1`, confirmar en consola `[native_proximity] Burbuja de %s ->
+   tramo...` al conectar y al ciclar GRAVE. Con 2 jugadores, comprobar que el corte de audio pasa
+   cerca del radio real de cada tramo (2/6/15m) y que SÍ hay diferencia perceptible entre tramos
+   (a diferencia del diseño v1).
+3. Radio: `/setvoiceintent` aparte, entrar dos jugadores a la misma frecuencia
+   (`exports['pma-voice']:setRadioChannel(1)` o el comando que use el job de turno), mantener
+   `+radiotalk` (LMENU) y confirmar que se oyen sin importar la distancia real entre ellos (canal
+   no-espacial). Confirmar en consola `[radio] Frecuencia %s -> canal nativo %s`.
+4. Llamadas: iniciar una llamada de teléfono entre los mismos 2 jugadores estando lejos el uno
+   del otro (fuera de proximidad) — confirmar que SÍ conecta y se oyen (esto es justo lo que
+   fallaba con Mumble puro, ver entrada 2026-09-01 más arriba). Confirmar en consola `[call]
+   Llamada %s -> canal nativo %s`.
+5. Colgar/salir de radio y confirmar que el canal nativo correspondiente se limpia (sin errores en
+   consola al volver a entrar).
+6. Solo si 2-5 salen limpios en las tres piezas: promover las convars a `cachoporp` y repetir ahí
+   antes de dar Proyecto Voz por definitivamente bueno y plantear apagar `sv_mumble`.
 
 ### Fase 5 — Mute/deaf de admin
 Con las natives nuevas esto es casi gratis (`SetPlayerMutedInVoiceChannel`/

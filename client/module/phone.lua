@@ -1,5 +1,15 @@
 local callChannel = 0
 
+-- Fase de llamadas de Proyecto Voz (ver VOZ.md). Con `voice_useNativeCalls`
+-- activa, el servidor mete/saca al jugador del canal nativo de la llamada
+-- (ver server/module/phone.lua) -- eso ya basta para transmitir/recibir en
+-- un canal NON_SPATIAL, no hace falta apuntar voice targets de Mumble.
+-- `toggleVoice` se mantiene igual (submix/volumen, ver client/init/main.lua)
+-- porque no es un mecanismo de "target", es cosmetico y sigue funcionando.
+local function isNativeCallsActive()
+	return GetConvarInt('voice_useNativeCalls', 0) == 1
+end
+
 RegisterNetEvent('pma-voice:syncCallData', function(callTable, channel)
 	callData = callTable
 	handleRadioAndCallInit()
@@ -18,12 +28,14 @@ RegisterNetEvent('pma-voice:removePlayerFromCall', function(plySource)
 			end
 		end
 		callData = {}
-		MumbleClearVoiceTargetPlayers(voiceTarget)
-		addVoiceTargets((radioPressed and isRadioEnabled()) and radioData or {}, callData)
+		if not isNativeCallsActive() then
+			MumbleClearVoiceTargetPlayers(voiceTarget)
+			addVoiceTargets((radioPressed and isRadioEnabled()) and radioData or {}, callData)
+		end
 	else
 		callData[plySource] = nil
 		toggleVoice(plySource, radioData[plySource], 'call')
-		if MumbleIsPlayerTalking(PlayerId()) then
+		if not isNativeCallsActive() and MumbleIsPlayerTalking(PlayerId()) then
 			MumbleClearVoiceTargetPlayers(voiceTarget)
 			addVoiceTargets((radioPressed and isRadioEnabled()) and radioData or {}, callData)
 		end

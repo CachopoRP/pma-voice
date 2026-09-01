@@ -1,5 +1,40 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-01 (2) — Sistema completo de voz nativa: proximidad (v2), radio y llamadas · Claude
+
+**Contexto:** Oscar pegó la documentación oficial completa de Cfx.re para la nueva API de voz de
+Enhanced (guardada íntegra en `VOZ.md`, sección "Documentación oficial completa"). Corrigió varias
+suposiciones del proyecto: `CreateVoiceChannel` y compañía SÍ están documentadas oficialmente
+(solo que en la guía en prosa, no en el índice `natives.json`); `voice_useNativeAudio` está en la
+lista de convars **eliminadas** en Enhanced (vestigio muerto en `shared.lua`); el modo `TEMPORARY`
+(3) hereda todo el comportamiento `SPATIAL` y se autoborra al vaciarse; la limpieza al desconectar
+ya la hace el engine solo.
+
+**Hecho, todo detrás de convars apagadas por defecto (`voice_useNativeProximity`,
+`voice_useNativeRadio`, `voice_useNativeCalls`), sin tocar el camino Mumble cuando están en 0:**
+- `shared.lua`: `Cfg.voiceModes` recalibrado a una sola tabla (Susurro 2.0 / Normal 6.0 / Grito
+  15.0), quitada la dependencia del convar muerto. Mismo fix en el multiplicador ×3 de
+  `client/init/proximity.lua:orig_addProximityCheck`.
+- `server/module/native_proximity.lua` **reescrito entero** — diseño v1 (3 canales fijos
+  compartidos por tramo) descartado tras confirmar en vivo que los 3 tramos sonaban igual;
+  rediseñado como "burbuja por jugador" (canal `TEMPORARY` propio, radio = tramo actual, se
+  recrea solo al cambiar de tramo). Ver detalle completo en `VOZ.md`, Fase 2.
+- `server/module/phone.lua` + `client/module/phone.lua`: canal `NON_SPATIAL` por llamada activa
+  (Fase 3). Arregla el fallo real de llamadas (voice targets de Mumble degradados a "solo uno" con
+  `voice_internal`, ver entrada 2026-09-01 más abajo).
+- `server/module/radio.lua` + `client/module/radio.lua`: canal `NON_SPATIAL` por frecuencia, PTT
+  traducido a `SetPlayerMutedInVoiceChannel` server-side (Fase 4).
+- `server/module/native_channels.lua`: `onResourceStop` que purga todos los canales creados por
+  este recurso (burbujas, radios, llamadas) si se reinicia solo el recurso sin reiniciar el
+  proceso entero del FXServer — mitiga la fuga de canales ya documentada ahí mismo.
+- `fxmanifest.lua`: nuevas entradas `voice_useNativeRadio`/`voice_useNativeCalls` en
+  `convar_category`.
+
+**Pendiente:** nada de esto se ha probado en vivo todavía — checklist completo en `VOZ.md`,
+sección "Cómo probar Fases 2-4 en vivo".
+
+---
+
 ## 2026-08-31 — Proyecto Voz: rama experimental para voz nativa de Enhanced · Claude
 
 **Contexto:** al pulsar la tecla de ciclar proximidad (`GRAVE`), el juego crashea con timeout —

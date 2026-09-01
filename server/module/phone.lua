@@ -1,3 +1,18 @@
+-- Fase de llamadas de Proyecto Voz (ver VOZ.md) -- aislada detras de
+-- `voice_useNativeCalls` (0 por defecto). Motivacion documentada: la doc
+-- oficial de Enhanced dice que con `voice_internal` la capa de compatibilidad
+-- Mumble degrada `MUMBLE_SET_VOICE_TARGET`/`MUMBLE_CLEAR_VOICE_TARGET` a "as
+-- if there is only a single voice target" -- justo lo que usa pma-voice para
+-- las llamadas, y por eso no eran fiables (ver VOZ.md, entrada 2026-09-01).
+-- Un canal NON_SPATIAL (modo 0, sin caida por distancia -- una llamada suena
+-- igual sin importar donde este cada uno) por llamada activa resuelve esto
+-- sin depender de voice targets en absoluto.
+local nativeCallChannels = {} -- [callChannel] = channelId
+
+local function isNativeCallsActive()
+	return GetConvarInt('voice_useNativeCalls', 0) == 1
+end
+
 --- removes a player from the call for everyone in the call.
 ---@param source number the player to remove from the call
 ---@param callChannel number the call channel to remove them from
@@ -11,6 +26,19 @@ function removePlayerFromCall(source, callChannel)
 	callData[callChannel][source] = nil
 	voiceData[source] = voiceData[source] or defaultTable(source)
 	voiceData[source].call = 0
+
+	if isNativeCallsActive() then
+		local channelId = nativeCallChannels[callChannel]
+		if channelId then
+			removePlayerFromNativeChannel(channelId, source)
+			if not next(callData[callChannel]) then
+				-- Llamada vacia -- borrar el canal, no dejarlo huerfano
+				-- esperando a la siguiente llamada con este mismo numero.
+				deleteNativeChannel(channelId)
+				nativeCallChannels[callChannel] = nil
+			end
+		end
+	end
 end
 
 --- adds a player to a call
@@ -31,6 +59,20 @@ function addPlayerToCall(source, callChannel)
 	voiceData[source] = voiceData[source] or defaultTable(source)
 	voiceData[source].call = callChannel
 	TriggerClientEvent('pma-voice:syncCallData', source, callData[callChannel])
+
+	if isNativeCallsActive() then
+		local channelId = nativeCallChannels[callChannel]
+		if not channelId then
+			channelId = createNativeChannel(NATIVE_VOICE_MODE.NON_SPATIAL, 0.0)
+			if channelId then
+				nativeCallChannels[callChannel] = channelId
+				logger.info('[call] Llamada %s -> canal nativo %s', callChannel, channelId)
+			end
+		end
+		if channelId then
+			addPlayerToNativeChannel(channelId, source)
+		end
+	end
 end
 
 --- set the players call channel

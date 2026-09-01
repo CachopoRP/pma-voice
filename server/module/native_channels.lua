@@ -1,13 +1,14 @@
 -- Fase 1 de Proyecto Voz -- ver VOZ.md. Capa fina sobre las natives nativas
 -- de canal de Enhanced (CreateVoiceChannel/AddPlayerToVoiceChannel/...),
--- confirmadas funcionando en vivo el 2026-09-01 (no aparecen en el indice
--- oficial de natives, pero responden de verdad -- ver VOZ.md Fase 0).
+-- confirmadas funcionando en vivo el 2026-09-01 y documentadas oficialmente
+-- por Cfx.re (guia en prosa de voz, no el indice `natives.json` clasico --
+-- ver VOZ.md "Documentacion oficial completa").
 --
--- Aislado a proposito: este archivo NO sustituye nada todavia. Proximidad,
--- radios y llamadas siguen sobre las natives de Mumble (server/main.lua,
--- server/module/radio.lua, server/module/phone.lua) hasta que cada fase
--- del plan los migre uno a uno. Anadir este modulo no cambia el
--- comportamiento actual del recurso en absoluto.
+-- Usado por server/module/native_proximity.lua (Fase 2), server/module/
+-- radio.lua (Fase 4, detras de voice_useNativeRadio) y server/module/
+-- phone.lua (Fase 3, detras de voice_useNativeCalls) -- todas isladas
+-- detras de convars apagadas por defecto, cero impacto en el camino Mumble
+-- mientras esten en 0.
 
 nativeChannels = nativeChannels or {} -- [channelId] = { mode, maxDistance, members = {[source]=true} }
 
@@ -137,3 +138,23 @@ end)
 -- server, uno por numero de radio) en vez de crear uno nuevo por jugador o
 -- por uso puntual -- asi el problema de fugas al reiniciar queda acotado a
 -- un puñado de canales, no a miles.
+--
+-- Mitigacion 2026-09-01: si se reinicia el PROCESO ENTERO del FXServer (no
+-- solo el recurso), el contador interno de la native se resetea solo -- es
+-- memoria nueva. El riesgo real es solo `restart pma-voice` sin reiniciar el
+-- server entero detras. Para ese caso, purgamos aqui todos los canales que
+-- este recurso haya creado (burbujas de proximidad, radios, llamadas -- lo
+-- que sea, todo pasa por `createNativeChannel` y queda en `nativeChannels`)
+-- justo antes de pararse. `DeleteVoiceChannel` funciona con el canal vacio o
+-- no (confirmado en la doc oficial), no hace falta vaciarlo antes.
+AddEventHandler('onResourceStop', function(resourceName)
+	if resourceName ~= GetCurrentResourceName() then return end
+	local purged = 0
+	for channelId in pairs(nativeChannels) do
+		local ok = pcall(DeleteVoiceChannel, channelId)
+		if ok then purged = purged + 1 end
+	end
+	if purged > 0 then
+		logger.info('[native_channels] onResourceStop: %s canal(es) nativo(s) purgado(s) antes de reiniciar.', purged)
+	end
+end)

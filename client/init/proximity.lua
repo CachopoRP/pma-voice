@@ -12,9 +12,10 @@ local listeners = {}
 
 function orig_addProximityCheck(ply)
 	local tgtPed = GetPlayerPed(ply)
-	local voiceRange = GetConvar('voice_useNativeAudio', 'false') == 'true' and proximity * 3 or proximity
+	-- `voice_useNativeAudio` esta eliminada en Enhanced (ver VOZ.md) -- ya no
+	-- hay una escala distinta que compensar, `proximity` es la distancia real.
 	local distance = #(plyCoords - GetEntityCoords(tgtPed))
-	return distance < voiceRange, distance
+	return distance < proximity, distance
 end
 
 local addProximityCheck = orig_addProximityCheck

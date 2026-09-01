@@ -66,6 +66,8 @@ convar_category 'PMA-Voice' {
 		{ "External mumble server port",           "$voice_externalPort",         "CV_INT",    "0" },
 		{ "Voice debug mode",                      "$voice_debugMode",            "CV_INT",    "0" },
 		{ "Use native proximity channels (Fase 2 Proyecto Voz, ver VOZ.md)", "$voice_useNativeProximity", "CV_INT", "0" },
+		{ "Use native voice channels for radio (Proyecto Voz, ver VOZ.md)", "$voice_useNativeRadio", "CV_INT", "0" },
+		{ "Use native voice channels for phone calls (Proyecto Voz, ver VOZ.md)", "$voice_useNativeCalls", "CV_INT", "0" },
 		{ "Disable players being allowed to join", "$voice_externalDisallowJoin", "CV_INT",    "0" },
 		{ "Hide server endpoints in logs",         "$voice_hideEndpoints",        "CV_INT",    "1" },
 	}
