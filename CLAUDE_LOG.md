@@ -1,5 +1,29 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-02 (3) — Debug en vivo: llamadas sin audio, GRAVE parece ciclar solo 2 estados · Claude
+
+**Reportado (con `voice_useNativeProximity` y `voice_useNativeCalls` activos):**
+- GRAVE parece ciclar solo entre 2 estados en vez de los 3 tramos (Susurro/Normal/Grito).
+- Las llamadas conectan (se ve/vibra el teléfono) pero no hay audio entre los dos jugadores.
+
+**Investigado sin acceso a consola en vivo:** revisada la lógica de `cycleproximity`
+(`client/commands.lua`) y `addPlayerToCall`/`removePlayerFromCall` (`server/module/phone.lua`) —
+correcta sobre el papel, sin bug evidente en el código que tocamos esta sesión. Revisado también
+`toggleVoice` (`client/init/main.lua`, sin tocar por nosotros) — el gate por `distance` nunca
+bloquea nada en la práctica porque `currentTargets` nunca se rellena (asignación ya comentada en
+el propio upstream, no es cosa nuestra).
+
+**Sin poder confirmar la causa a ciegas**, añadidos dos debugs temporales para la próxima prueba:
+- `client/commands.lua`: print en cada `cycleproximity` con `mode`/`#Cfg.voiceModes` y el tramo
+  resultante — para confirmar si el ciclo de verdad pasa por las 3 entradas.
+- `server/module/phone.lua`: print en cada `addPlayerToNativeChannel` de una llamada (canal,
+  resultado, miembros) + comando `/callvoicedebug` que vuelca `nativeCallChannels`/`callData`
+  enteros — para confirmar si los dos participantes de una llamada acaban en el mismo canal
+  nativo.
+
+**Pendiente:** repetir la prueba y pegar la consola (ambos jugadores en el ciclo de proximidad +
+`/callvoicedebug` durante una llamada activa).
+
 ## 2026-09-01 (2) — Sistema completo de voz nativa: proximidad (v2), radio y llamadas · Claude
 
 **Contexto:** Oscar pegó la documentación oficial completa de Cfx.re para la nueva API de voz de

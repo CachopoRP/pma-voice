@@ -86,6 +86,11 @@ RegisterCommand('cycleproximity', function()
 
 	setProximityState(Cfg.voiceModes[mode][1], false)
 	TriggerEvent('pma-voice:setTalkingMode', mode)
+	-- Debug temporal (ver pma-voice/CLAUDE_LOG.md) -- para ver si el ciclo
+	-- de verdad recorre las #Cfg.voiceModes entradas. Quitar cuando se
+	-- confirme resuelto.
+	print(('[cycle debug] mode=%s/%s -> %s (%sm)'):format(mode, #Cfg.voiceModes, Cfg.voiceModes[mode][2],
+		Cfg.voiceModes[mode][1]))
 end, false)
 if gameVersion == 'fivem' then
 	RegisterKeyMapping('cycleproximity', 'Cycle Proximity', 'keyboard', GetConvar('voice_defaultCycle', 'F11'))

@@ -70,10 +70,20 @@ function addPlayerToCall(source, callChannel)
 			end
 		end
 		if channelId then
-			addPlayerToNativeChannel(channelId, source)
+			local ok = addPlayerToNativeChannel(channelId, source)
+			print(('[call debug] addPlayerToNativeChannel(canal=%s, source=%s) -> %s (llamada=%s, miembros ahora=%s)')
+				:format(channelId, source, tostring(ok), callChannel, json.encode(callData[callChannel])))
 		end
 	end
 end
+
+-- Debug temporal (ver pma-voice/CLAUDE_LOG.md) -- para ver si dos jugadores
+-- en la misma llamada de verdad acaban en el mismo canal nativo. Quitar
+-- cuando se confirme resuelto.
+RegisterCommand('callvoicedebug', function()
+	print('[call debug] nativeCallChannels = ' .. json.encode(nativeCallChannels))
+	print('[call debug] callData = ' .. json.encode(callData))
+end, false)
 
 --- set the players call channel
 ---@param source number the player to set the call off
