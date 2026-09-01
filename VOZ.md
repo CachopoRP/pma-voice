@@ -203,11 +203,38 @@ respondieron correctamente de punta a punta:
 ```
 Comando de prueba ya retirado del código. Vía libre para Fase 2.
 
-### Fase 2 — Proximidad nativa
-Migrar `client/init/proximity.lua` de las natives de Mumble a un único canal espacial
-(`CreateVoiceChannel(1, distancia)`) que se cicla de rango con la tecla `GRAVE` (sustituye a
-`cycleproximity`). Menor riesgo — ya sabemos que la proximidad funciona hoy vía el shim de
-Mumble, así que hay margen para comparar comportamiento antes/después en vivo.
+### Fase 2 — Proximidad nativa — 🔧 construido en modo aislado 2026-09-01, pendiente de prueba en vivo
+Migrar `client/init/proximity.lua` de las natives de Mumble a canales espaciales nativos
+(`CreateVoiceChannel(1, distancia)`).
+
+**Ajuste de diseño frente a la idea original del plan:** `MumbleSetTalkerProximity` es un radio
+que cada CLIENTE ajusta por su cuenta; `CreateVoiceChannel` es un canal del SERVIDOR con un único
+radio compartido por todos sus miembros, y no existe ninguna native para cambiarle el radio a un
+canal ya creado (mismo hueco que ya documentaba `native_channels.lua`). Así que "un canal que
+cicla de rango" no es viable tal cual — en su lugar, `server/module/native_proximity.lua` crea
+**3 canales fijos, uno por cada tramo de `Cfg.voiceModes`** (Susurro/Normal/Grito) al arrancar el
+recurso, y ciclar el rango pasa a ser "cambiar de canal" (sacar al jugador del canal de su tramo
+actual, meterlo en el del nuevo) en vez de "cambiar el radio de un canal". Mismo principio de
+"pocos canales fijos y de larga duración" que ya recomendaba la Fase 1 para acotar el problema de
+canales huérfanos al reiniciar.
+
+Construido **aislado**, igual que la Fase 1: `client/init/proximity.lua` (el camino real, sobre
+Mumble) no se ha tocado. Exports nuevos: `joinNativeProximityTier(source, tierIndex)`,
+`leaveNativeProximity(source)`. Comando de prueba manual: `/testnativeproximity <tramo 1-3>
+[serverId]`.
+
+**Pendiente antes de dar la Fase 2 por buena** (mismo criterio que Fase 0/1 — probar en vivo antes
+de seguir):
+1. Confirmar que los 3 canales se crean al arrancar (log `[native_proximity] Tramo N (...) -> canal
+   nativo N` en consola).
+2. Con 2 jugadores conectados, usar `/testnativeproximity <tramo>` en cada uno y comprobar que se
+   oyen o no según el tramo y la distancia real entre ellos (los canales nativos NO hacen sonar
+   nada por sí solos si ninguno los ha probado — hace falta la prueba manual en vivo, no basta con
+   ver el log del servidor).
+3. Decidir cómo convive esto con el camino real: ¿el jugador entra en su canal de tramo nativo
+   ADEMÁS de la proximidad de Mumble (doble audio, a evitar) o se apaga `MumbleSetTalkerProximity`
+   para ese jugador mientras el canal nativo esté activo? Esto se decide después de confirmar el
+   punto 2, no antes.
 
 ### Fase 3 — Llamadas de teléfono
 La pieza que motiva retomar el proyecto ahora mismo. Canal aislado por llamada
