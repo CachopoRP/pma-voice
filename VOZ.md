@@ -184,11 +184,24 @@ Existen y funcionan aunque todavía no estén documentadas en el índice oficial
 veces con FXServer: la implementación llega antes que la declaración/doc-comment que genera el
 índice). Vía libre para el resto del plan.
 
-### Fase 1 — Núcleo de canales (server)
+### Fase 1 — Núcleo de canales (server) — ✅ CONFIRMADO 2026-09-01
 Módulo nuevo, propio de este proyecto (no toca `server/module/radio.lua` ni `phone.lua`
 existentes todavía): una capa fina sobre las natives de canal — crear/borrar canales, llevar la
 cuenta de qué canal RAGE (`CreateVoiceChannel`) corresponde a qué "canal lógico" nuestro (número
 de radio, ID de llamada, proximidad). Sin esto, las fases siguientes no tienen dónde apoyarse.
+
+Construido en `server/module/native_channels.lua` (aislado, cero impacto en el comportamiento
+actual del recurso) y validado en vivo con `/testnativechannels`, las 6 funciones del módulo
+respondieron correctamente de punta a punta:
+```
+[native_channels] createNativeChannel -> 3
+[native_channels] addPlayerToNativeChannel -> true
+[native_channels] getNativeChannelsForPlayer -> 1 canal(es)
+[native_channels] setPlayerMutedInNativeChannel -> true
+[native_channels] removePlayerFromNativeChannel -> true
+[native_channels] deleteNativeChannel -> true
+```
+Comando de prueba ya retirado del código. Vía libre para Fase 2.
 
 ### Fase 2 — Proximidad nativa
 Migrar `client/init/proximity.lua` de las natives de Mumble a un único canal espacial
