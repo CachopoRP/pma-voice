@@ -161,14 +161,28 @@ para que `src-payphone`, `qbx_phone`, `qbx_adminmenu` y `ps-mdt` sigan funcionan
 Proximidad ya funciona hoy (vía `voice_internal` + `sv_mumble true`) — el resto no, o no de forma
 fiable.
 
-### Fase 0 — Verificación en vivo de las natives nuevas
+### Fase 0 — Verificación en vivo de las natives nuevas ✅ **CONFIRMADO 2026-09-01**
 Antes de escribir nada real: comprobar en `crp-experimental` que `CreateVoiceChannel` y el resto
 de natives de canal (`AddPlayerToVoiceChannel`, `RemovePlayerFromVoiceChannel`,
 `SetPlayerMutedInVoiceChannel`, `SetPlayerDeafInVoiceChannel`, `DeleteVoiceChannel`) existen de
 verdad en el build actual del server — documentadas en la guía oficial, pero **no aparecen en el
-índice general de natives** (`natives.json`), así que hace falta confirmarlo con una prueba
-mínima (crear un canal, meter dos jugadores, comprobar que se oyen) antes de comprometerse al
-resto del plan. Si no existen todavía en este build, el proyecto se replantea entero.
+índice general de natives** (`natives.json`) ni en `ext/native-decls` del propio repo de
+FXServer (confirmado buscando ahí a fondo, cero mención, cero hilo de foro de la comunidad
+usándolas). Antes de fiarse solo de la documentación, se probó en vivo con un recurso
+desechable (`voice_native_test`, un comando `/testvoicechannel`) directamente en el server de
+Oscar. **Resultado: las 5 natives responden de verdad**:
+
+```
+CreateVoiceChannel(1, 15.0) -> OK, resultado: 2
+AddPlayerToVoiceChannel(2, 1) -> OK, resultado: 1
+SetPlayerMutedInVoiceChannel(2, 1, false) -> OK, resultado: 1
+RemovePlayerFromVoiceChannel(2, 1) -> OK, resultado: 1
+DeleteVoiceChannel(2) -- limpieza -> OK, resultado: 1
+```
+
+Existen y funcionan aunque todavía no estén documentadas en el índice oficial de natives (pasa a
+veces con FXServer: la implementación llega antes que la declaración/doc-comment que genera el
+índice). Vía libre para el resto del plan.
 
 ### Fase 1 — Núcleo de canales (server)
 Módulo nuevo, propio de este proyecto (no toca `server/module/radio.lua` ni `phone.lua`
