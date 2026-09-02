@@ -46,6 +46,13 @@ exports('addCallCheck', addCallCheck)
 --- limpia solo en removePlayerFromCall cuando la llamada se vacia)
 ---@param callChannel number
 function removeCallCheck(callChannel)
+	-- 2026-09-03 (ver CLAUDE_LOG.md): a diferencia de addCallCheck, esta no
+	-- comprobaba el tipo antes de indexar -- crash real en vivo
+	-- ("table index is nil") cuando qbx_phone llamaba con call_id nil (la
+	-- ruta de "llamada sin respuesta" en notification.lua nunca lo incluye).
+	-- Es limpieza defensiva, no un fallo de integracion -- no-op en vez de
+	-- error si no es un numero valido.
+	if type(callChannel) ~= 'number' then return end
 	callChecks[callChannel] = nil
 end
 

@@ -1,5 +1,18 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-03 — Fix: crash real en vivo, `removeCallCheck` indexaba con nil · Claude
+
+**Reportado:** probado en `crp-experimental` (audio de llamada funcionando perfecto). Al colgar,
+crash real: `phone.lua:63: table index is nil`, con `SCRIPT ERROR` en `qbx_phone`.
+
+**Causa:** `removeCallCheck` (fix de seguridad de ayer, ver entrada anterior) es el único de los
+tres exports nuevos que no comprobaba el tipo del parámetro antes de indexar --  `addCallCheck` sí
+lo hacía. `qbx_phone/client/feature/notification.lua` tiene una ruta de "llamada sin respuesta"
+que llama a `EndCall` sin `call_id`, y ese nil llegaba tal cual hasta `callChecks[callChannel] = nil`.
+
+**Fix:** no-op si `callChannel` no es un número (limpieza defensiva, no debe romper el flujo de
+colgar). Mismo fix portado desde `crp-experimental`, donde se confirmó primero en vivo.
+
 ## 2026-09-02 — Seguridad: `pma-voice:setPlayerCall` aceptaba cualquier call_id sin dueño · Claude
 
 **Pedido:** Oscar, revisando el sistema de llamadas de `qbx_phone` en la rama experimental de voz
