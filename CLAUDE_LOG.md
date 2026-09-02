@@ -1,5 +1,28 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-02 (4) — Arnés de pruebas aislado para las natives de canal (`voice_native_test.lua`) · Claude
+
+**Contexto:** tras confirmar (entrada 3) que el canal `NON_SPATIAL` de una llamada sí tiene a
+los dos jugadores como miembros (`miembros ahora=[true,true]`) pero siguen sin oírse, y agotar
+la investigación por documentación oficial (sin encontrar ninguna native real para "2D output
+positioning" que la propia doc menciona pero no nombra en ningún sitio), se pidió un arnés de
+pruebas para aislar el problema de toda la lógica de `pma-voice` y probar escenarios concretos
+directamente contra las natives.
+
+**Hecho:** `server/module/voice_native_test.lua` (temporal, borrar cuando se termine de
+diagnosticar), comandos:
+- `/vtest_a_nonspatial_solo <serverId>` — SOLO un canal `NON_SPATIAL`, nada más. Si esto tampoco
+  se oye, el problema es del modo `NON_SPATIAL` en sí.
+- `/vtest_b_nonspatial_mas_burbuja <serverId>` — el mismo canal de llamada MÁS una burbuja
+  `TEMPORARY` propia por jugador (réplica exacta del caso real reportado: llamada + proximidad
+  nativa a la vez). Si A funciona y B no, confirma que el problema es estar en dos canales de
+  modos distintos simultáneamente.
+- `/vtest_c_spatial_solo <serverId>` — solo `TEMPORARY` (control/referencia, ya sabíamos que se
+  oye).
+- `/vtest_mute`, `/vtest_state`, `/vtest_cleanup`, `/vtest_whoami` — utilidades.
+
+**Pendiente:** probar en vivo A, B y C con 2 jugadores y reportar cuál(es) se oyen.
+
 ## 2026-09-02 (3) — Debug en vivo: llamadas sin audio, GRAVE parece ciclar solo 2 estados · Claude
 
 **Reportado (con `voice_useNativeProximity` y `voice_useNativeCalls` activos):**
