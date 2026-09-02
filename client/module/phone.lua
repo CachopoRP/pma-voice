@@ -4,27 +4,38 @@ local callChannel = 0
 -- activa, el servidor mete/saca al jugador del canal nativo de la llamada
 -- (ver server/module/phone.lua) -- eso ya basta para transmitir/recibir en
 -- un canal NON_SPATIAL, no hace falta apuntar voice targets de Mumble.
--- `toggleVoice` se mantiene igual (submix/volumen, ver client/init/main.lua)
--- porque no es un mecanismo de "target", es cosmetico y sigue funcionando.
 local function isNativeCallsActive()
 	return GetConvarInt('voice_useNativeCalls', 0) == 1
 end
 
+-- CORREGIDO 2026-09-02 (ver CLAUDE_LOG.md): `toggleVoice` NO es cosmetico
+-- como se penso al principio -- confirmado en vivo con un arnes de pruebas
+-- aislado (server/module/voice_native_test.lua) que el canal NON_SPATIAL
+-- puro se oye perfecto sin tocar nada de esto, y que el mismo canal +
+-- burbuja de proximidad a la vez TAMBIEN se oye perfecto -- la unica
+-- diferencia real con la llamada rota de pma-voice es que esta SI llama a
+-- `toggleVoice` (MumbleSetVolumeOverrideByServerId/MumbleSetSubmixForServerId,
+-- ambas natives de Mumble) sobre un jugador cuyo audio ya no viaja por
+-- Mumble. Se salta toggleVoice del todo cuando el modo nativo esta activo.
 RegisterNetEvent('pma-voice:syncCallData', function(callTable, channel)
 	callData = callTable
 	handleRadioAndCallInit()
 end)
 
 RegisterNetEvent('pma-voice:addPlayerToCall', function(plySource)
-	toggleVoice(plySource, true, 'call')
+	if not isNativeCallsActive() then
+		toggleVoice(plySource, true, 'call')
+	end
 	callData[plySource] = true
 end)
 
 RegisterNetEvent('pma-voice:removePlayerFromCall', function(plySource)
 	if plySource == playerServerId then
-		for tgt, _ in pairs(callData) do
-			if tgt ~= playerServerId then
-				toggleVoice(tgt, false, 'call')
+		if not isNativeCallsActive() then
+			for tgt, _ in pairs(callData) do
+				if tgt ~= playerServerId then
+					toggleVoice(tgt, false, 'call')
+				end
 			end
 		end
 		callData = {}
@@ -34,7 +45,9 @@ RegisterNetEvent('pma-voice:removePlayerFromCall', function(plySource)
 		end
 	else
 		callData[plySource] = nil
-		toggleVoice(plySource, radioData[plySource], 'call')
+		if not isNativeCallsActive() then
+			toggleVoice(plySource, radioData[plySource], 'call')
+		end
 		if not isNativeCallsActive() and MumbleIsPlayerTalking(PlayerId()) then
 			MumbleClearVoiceTargetPlayers(voiceTarget)
 			addVoiceTargets((radioPressed and isRadioEnabled()) and radioData or {}, callData)

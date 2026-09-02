@@ -1,5 +1,29 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-02 (5) — Causa real encontrada con el arnés de pruebas: `toggleVoice` no es cosmético · Claude
+
+**Probado en vivo con `voice_native_test.lua` (entrada anterior):**
+- Escenario A (solo canal `NON_SPATIAL`, sin nada del cliente de `pma-voice` de por medio): "nos
+  oímos perfecto" — descarta que `NON_SPATIAL` esté roto.
+- Escenario B (el mismo canal + burbuja `TEMPORARY` propia de cada uno a la vez, réplica exacta
+  del caso real): "nos oímos perfecto" — descarta el conflicto de estar en dos canales a la vez.
+
+Con las dos hipótesis descartadas, la única diferencia real entre el arnés de pruebas (que
+funciona) y la llamada real de `pma-voice` (que no) es que la llamada real sí llama a
+`toggleVoice` (`client/init/main.lua`) — que pese a documentarse como "cosmético" en la Fase 3
+original, hace `MumbleSetVolumeOverrideByServerId`/`MumbleSetSubmixForServerId`, dos natives con
+prefijo Mumble, sobre un jugador cuyo audio ya no viaja por Mumble sino por el canal nativo nuevo.
+
+**Fix:** `client/module/phone.lua` ahora se salta `toggleVoice` por completo cuando
+`voice_useNativeCalls` está activo (antes solo se saltaba `addVoiceTargets`/
+`MumbleClearVoiceTargetPlayers`, se asumía que `toggleVoice` no hacía falta tocarlo). Se pierde el
+efecto cosmético de submix de llamada (EQ tipo teléfono) mientras el modo nativo esté activo — se
+puede retomar más adelante con una alternativa que no dependa de natives Mumble, no bloqueante
+para que la llamada se oiga.
+
+**Sin confirmar en vivo todavía** — el arnés de pruebas (`voice_native_test.lua`) se deja por
+ahora para poder seguir aislando si hiciera falta; borrar cuando esto se confirme resuelto.
+
 ## 2026-09-02 (4) — Arnés de pruebas aislado para las natives de canal (`voice_native_test.lua`) · Claude
 
 **Contexto:** tras confirmar (entrada 3) que el canal `NON_SPATIAL` de una llamada sí tiene a
