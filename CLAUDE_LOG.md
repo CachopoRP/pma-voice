@@ -1,5 +1,36 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-02 — Seguridad: `pma-voice:setPlayerCall` aceptaba cualquier call_id sin dueño · Claude
+
+**Pedido:** Oscar, revisando el sistema de llamadas de `qbx_phone` en la rama experimental de voz
+nativa (`crp-experimental`), pidió comprobar que la lógica fuera server-sided. Apareció un fallo de
+autorización real, presente también aquí en producción (no es específico de la rama experimental).
+
+**Causa:** `RegisterNetEvent('pma-voice:setPlayerCall', callChannel)` acepta el `callChannel`
+directamente del cliente sin comprobar que le pertenezca -- a diferencia de las radios
+(`canJoinChannel`/`addChannelCheck` en `radio.lua`), las llamadas no tenían ningún check de
+pertenencia. Agravado por `qbx_phone/client/feature/calls.lua:GenerateCallId`: el `call_id` NO es
+aleatorio, es `math.ceil((digitos_telefono_A + digitos_telefono_B) / 100)` -- determinista a partir
+de los dos números, calculable sin fuerza bruta si se conocen (o se prueban) los dos números.
+Cualquiera podía adivinar/probar el `call_id` de una llamada ajena y unirse a escucharla.
+
+**Fix:** `callChecks` + `canJoinCall`/`addCallCheck`/`removeCallCheck` en `server/module/phone.lua`,
+mismo patrón que `radioChecks`/`canJoinChannel`/`addChannelCheck` de `radio.lua` (opt-in: si nadie
+registra un check para un `callChannel`, se permite -- compatibilidad con otros consumidores).
+`addPlayerToCall` ahora rechaza si `canJoinCall` devuelve false; `setPlayerCall` usa el resultado
+real (`wasAdded`) en vez de asumir que siempre entra, igual que ya hacía `setPlayerRadio`. El check
+se limpia solo cuando la llamada se vacía (en `removePlayerFromCall`), y también expuesto
+`removeCallCheck` para limpieza defensiva desde fuera. `qbx_phone/server/feature/calls.lua`:
+`AcceptCall` registra el check con los dos `source` reales (el único momento en que el servidor
+conoce con certeza quién es cada uno); `EndCall` lo limpia también de forma defensiva.
+
+**Mismo fix aplicado en `crp-experimental`** (ver su propio `CLAUDE_LOG.md`) -- ahí además hay
+canales nativos reales por debajo, así que unirse a un `callChannel` ajeno significa audio real, no
+solo un flag en una tabla; aquí en Mumble puro el fallo es el mismo pero el resultado es escuchar
+por Mumble en vez de por canal nativo.
+
+**Sin confirmar en vivo todavía.**
+
 ## 2026-08-30 (2) — Aviso "Mumble native functions are deprecated" — esperado, sin acción · Claude
 
 **Reportado:** en consola aparece `The Mumble native functions are deprecated and will be
