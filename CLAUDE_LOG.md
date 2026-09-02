@@ -1,5 +1,26 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-02 (7) — Cuarto punto de fuga: `addNearbyPlayers` enrutaba la llamada por Mumble sin guardar · Claude
+
+**Reportado tras el fix (6):** nueva llamada probada en vivo (después de que (6) ya estaba
+desplegado, commit `6cf7f69` a las 03:09 del mismo día), servidor confirma otra vez a los dos
+jugadores en el mismo canal nativo (`miembros ahora=[true,true]`), pero "no nos escuchamos"
+persiste.
+
+**Causa:** los tres fixes anteriores se encontraron con `grep toggleVoice`, pero
+`client/init/proximity.lua:addNearbyPlayers()` (el tick de proximidad, se ejecuta constantemente)
+tiene su PROPIO bloque de enrutado de llamadas que nunca pasa por `toggleVoice` — busca el canal
+Mumble del otro participante de la llamada (`MumbleGetVoiceChannelFromServerId`) y lo mete como
+voice target (`MumbleAddVoiceTargetChannel`), lógica del pma-voice original (llamadas 100% Mumble).
+No usa `toggleVoice` así que ningún `grep toggleVoice` lo iba a encontrar — sin guardar, corría en
+cada tick con `voice_useNativeCalls` activo, pisando con natives Mumble la pertenencia al canal
+nativo que el servidor ya había puesto vía `AddPlayerToVoiceChannel`.
+
+**Fix:** ese bloque ahora se salta entero cuando `voice_useNativeCalls` está activo (mismo patrón
+de guard que los otros tres puntos).
+
+**Sin confirmar en vivo todavía** — probar llamada de nuevo tras desplegar este commit.
+
 ## 2026-09-02 (6) — Segundo (y tercer) punto de entrada de `toggleVoice` sin guardar · Claude
 
 **Reportado tras el fix (5):** llamada probada en vivo, servidor confirma a los dos jugadores en

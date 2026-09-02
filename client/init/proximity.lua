@@ -39,11 +39,21 @@ function addNearbyPlayers()
 	MumbleAddVoiceChannelListen(LocalPlayer.state.assignedChannel)
 	MumbleAddVoiceTargetChannel(voiceTarget, LocalPlayer.state.assignedChannel)
 
-	for source, _ in pairs(callData) do
-		if source ~= playerServerId then
-			local channel = MumbleGetVoiceChannelFromServerId(source)
-			if channel ~= -1 then
-				MumbleAddVoiceTargetChannel(voiceTarget, channel)
+	-- CORREGIDO 2026-09-02 (ver pma-voice/CLAUDE_LOG.md): este bucle es el
+	-- enrutado de audio de llamadas del pma-voice ORIGINAL (Mumble puro) --
+	-- busca el canal Mumble del otro participante de la llamada y lo anade
+	-- como voice target. No llama a `toggleVoice`, asi que los dos fixes
+	-- anteriores (grep toggleVoice) no lo tocaron: seguia ejecutandose en
+	-- cada tick de proximidad con `voice_useNativeCalls` activo, pisando con
+	-- natives Mumble la pertenencia al canal nativo que ya puso el servidor
+	-- via AddPlayerToVoiceChannel.
+	if GetConvarInt('voice_useNativeCalls', 0) ~= 1 then
+		for source, _ in pairs(callData) do
+			if source ~= playerServerId then
+				local channel = MumbleGetVoiceChannelFromServerId(source)
+				if channel ~= -1 then
+					MumbleAddVoiceTargetChannel(voiceTarget, channel)
+				end
 			end
 		end
 	end
