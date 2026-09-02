@@ -1,5 +1,29 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-03 — Fix: crash real en vivo, `removeCallCheck` indexaba con nil · Claude
+
+**Reportado:** llamada probada en vivo con el fix (9) ya desplegado -- **funcionó, audio
+perfecto** (confirmado por el log: canal nativo 4, ambos `miembros ahora=[true,true]`, y
+`qbx_phone added a check to call 130135832` mostrando el ACL nuevo en marcha). Al colgar (botón NUI
++ F1), crash real: `@pma-voice/server/module/phone.lua:63: table index is nil`, con
+`SCRIPT ERROR` en `qbx_phone` porque el export fallido rompió su callback `EndCall`.
+
+**Causa:** `removeCallCheck` (añadido en el fix (9) de ayer) es el único de los tres exports nuevos
+que no comprobaba el tipo del parámetro antes de indexar -- `addCallCheck` sí lo hacía.
+`qbx_phone/client/feature/notification.lua:185-186` (la ruta de "llamada sin respuesta", cuando
+nadie contesta y el timeout cuelga solo) llama a `EndCall` con `{ to_source = ... }`, **sin
+`call_id`** -- ese `body.call_id` nil llegaba tal cual hasta `callChecks[callChannel] = nil` y
+Lua no permite indexar una tabla con `nil`.
+
+**Fix:** `removeCallCheck` ahora es no-op si `callChannel` no es un número (es limpieza defensiva,
+no un fallo de integración -- no tiene sentido que reviente el flujo de colgar). También guardada
+la llamada en `qbx_phone/server/feature/calls.lua:EndCall` (`and body.call_id`) para no gastar el
+round-trip cuando no hay nada que limpiar. Aplicado en `crp-experimental` y `cachoporp` (mismo
+export nuevo en ambas ramas desde el fix (9)).
+
+**Sin confirmar en vivo todavía** -- pero el resto del fix de llamadas (audio + ACL) ya está
+confirmado funcionando.
+
 ## 2026-09-02 (9) — Seguridad: `pma-voice:setPlayerCall` aceptaba cualquier call_id sin dueño · Claude
 
 **Pedido:** Oscar, tras revisar que la lógica del sistema de llamadas fuera server-sided, pidió
