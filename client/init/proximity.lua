@@ -36,8 +36,21 @@ function addNearbyPlayers()
 	currentTargets = {}
 	MumbleClearVoiceTargetChannels(voiceTarget)
 	if LocalPlayer.state.disableProximity then return end
-	MumbleAddVoiceChannelListen(LocalPlayer.state.assignedChannel)
-	MumbleAddVoiceTargetChannel(voiceTarget, LocalPlayer.state.assignedChannel)
+
+	-- CORREGIDO 2026-09-02 (ver pma-voice/CLAUDE_LOG.md): "assignedChannel" es
+	-- el canal base de proximidad del pma-voice ORIGINAL (Mumble puro,
+	-- asignado una vez al conectar en server/main.lua:firstFreeChannel()).
+	-- VOZ.md documenta (con cita oficial de Cfx.re) que bajo voice_internal
+	-- MUMBLE_SET_VOICE_TARGET/MUMBLE_CLEAR_VOICE_TARGET quedan degradados a UN
+	-- SOLO target -- este bloque corria sin guardar en cada tick de
+	-- proximidad, forzando ese unico target de vuelta al canal base de
+	-- Mumble aunque el jugador estuviera en una llamada o burbuja nativa,
+	-- pisando en cada tick la ruta de audio real puesta por
+	-- AddPlayerToVoiceChannel.
+	if GetConvarInt('voice_useNativeCalls', 0) ~= 1 and GetConvarInt('voice_useNativeProximity', 0) ~= 1 then
+		MumbleAddVoiceChannelListen(LocalPlayer.state.assignedChannel)
+		MumbleAddVoiceTargetChannel(voiceTarget, LocalPlayer.state.assignedChannel)
+	end
 
 	-- CORREGIDO 2026-09-02 (ver pma-voice/CLAUDE_LOG.md): este bucle es el
 	-- enrutado de audio de llamadas del pma-voice ORIGINAL (Mumble puro) --

@@ -1,5 +1,29 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-02 (8) — Quinto punto de fuga: `assignedChannel` (canal base legado) sin guardar, degradado a un solo voice target · Claude
+
+**Reportado tras el fix (7):** desplegado y reiniciado, nueva llamada probada en vivo con
+`voice_useNativeProximity` TAMBIÉN activo (log muestra "Burbuja de 2 -> tramo 2 -> canal nativo 3"
+antes de la llamada), servidor confirma otra vez a los dos en el mismo canal nativo, pero sigue
+sin oírse. Pregunta de Oscar: "¿cómo puede ser que ayer con los comandos manuales (`vtest_a`/
+`vtest_b`, 100% server-side) nos oyéramos y hoy con la llamada real no?"
+
+**Causa:** `addNearbyPlayers()` (el tick de proximidad, corre siempre, en todos los clientes)
+tenía un bloque más SIN guardar por ninguna convar, ni siquiera `voice_useNativeProximity`:
+`MumbleAddVoiceChannelListen`/`MumbleAddVoiceTargetChannel` sobre `LocalPlayer.state.assignedChannel`
+-- el canal base de proximidad del pma-voice original (asignado una vez al conectar,
+`server/main.lua:firstFreeChannel()`, nada que ver con llamadas ni burbujas nativas). `VOZ.md`
+documenta con cita oficial de Cfx.re que bajo `voice_internal` estas dos natives quedan degradadas
+a **un solo voice target** -- este bloque forzaba ese único target de vuelta al canal base en CADA
+tick, pisando la ruta de audio real. Explica la pregunta de Oscar: los comandos manuales de ayer
+nunca pasan por `client/init/proximity.lua` (son 100% consola/server), así que este bloque nunca
+entraba en juego en esa prueba -- solo aparece con el flujo real de llamada/proximidad del cliente.
+
+**Fix:** ese bloque ahora se salta cuando `voice_useNativeCalls` O `voice_useNativeProximity` están
+activos (con cualquiera de los dos, el canal base legado es irrelevante).
+
+**Sin confirmar en vivo todavía.**
+
 ## 2026-09-02 (7) — Cuarto punto de fuga: `addNearbyPlayers` enrutaba la llamada por Mumble sin guardar · Claude
 
 **Reportado tras el fix (6):** nueva llamada probada en vivo (después de que (6) ya estaba
