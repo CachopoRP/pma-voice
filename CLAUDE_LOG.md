@@ -1,5 +1,24 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-02 (6) — Segundo (y tercer) punto de entrada de `toggleVoice` sin guardar · Claude
+
+**Reportado tras el fix (5):** llamada probada en vivo, servidor confirma a los dos jugadores en
+el mismo canal nativo (`miembros ahora=[true,true]`), pero sigue sin oírse.
+
+**Causa:** el fix (5) solo guardó las llamadas a `toggleVoice` de `client/module/phone.lua`.
+Había un segundo punto de entrada sin tocar: `handleRadioAndCallInit()` en
+`client/init/main.lua`, que se dispara vía `pma-voice:syncCallData` — justo el evento que recibe
+quien **inicia** la llamada, así que el fix anterior no tenía efecto real en el caso probado.
+Revisado el resto del recurso (`grep toggleVoice`): `client/module/radio.lua` tiene el mismo
+patrón sin guardar en `setTalkingOnRadio`/`removePlayerFromRadio` — nunca se ha probado radio
+nativa en vivo todavía, pero tendría el mismo bug en cuanto se probara.
+
+**Fix:** guardadas las tres llamadas restantes (`handleRadioAndCallInit` en `main.lua`,
+`setTalkingOnRadio`/`removePlayerFromRadio` en `radio.lua`) detrás de
+`voice_useNativeCalls`/`voice_useNativeRadio`, mismo patrón que ya se aplicó en `phone.lua`.
+
+**Sin confirmar en vivo todavía.**
+
 ## 2026-09-02 (5) — Causa real encontrada con el arnés de pruebas: `toggleVoice` no es cosmético · Claude
 
 **Probado en vivo con `voice_native_test.lua` (entrada anterior):**

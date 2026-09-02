@@ -61,7 +61,14 @@ function setTalkingOnRadio(plySource, enabled)
 	if not isRadioEnabled() then return logger.info("[radio] Ignoring setTalkingOnRadio. radioEnabled: %s disableRadio: %s", radioEnabled, LocalPlayer.state.disableRadio) end
 	-- If we're on a call we don't want to toggle their voice disabled this will break calls.
 	local enabled = enabled or callData[plySource]
-	toggleVoice(plySource, enabled, 'radio')
+	-- CORREGIDO 2026-09-02 (ver pma-voice/CLAUDE_LOG.md): toggleVoice rompia
+	-- el audio de llamadas nativas (MumbleSetVolumeOverrideByServerId sobre
+	-- un jugador cuyo audio ya no viaja por Mumble) -- mismo patron aqui,
+	-- nunca probado en vivo con radio nativa todavia. Saltado si el modo
+	-- nativo esta activo, igual que ya se hizo para llamadas.
+	if not isNativeRadioActive() then
+		toggleVoice(plySource, enabled, 'radio')
+	end
 	playMicClicks(enabled)
 end
 RegisterNetEvent('pma-voice:setTalkingOnRadio', setTalkingOnRadio)
@@ -88,9 +95,11 @@ RegisterNetEvent('pma-voice:addPlayerToRadio', addPlayerToRadio)
 function removePlayerFromRadio(plySource)
 	if plySource == playerServerId then
 		logger.info('[radio] Left radio %s, cleaning up.', radioChannel)
-		for tgt, _ in pairs(radioData) do
-			if tgt ~= playerServerId then
-				toggleVoice(tgt, false, 'radio')
+		if not isNativeRadioActive() then
+			for tgt, _ in pairs(radioData) do
+				if tgt ~= playerServerId then
+					toggleVoice(tgt, false, 'radio')
+				end
 			end
 		end
 		sendUIMessage({
@@ -103,7 +112,9 @@ function removePlayerFromRadio(plySource)
 			addVoiceTargets(callData)
 		end
 	else
-		toggleVoice(plySource, false, 'radio')
+		if not isNativeRadioActive() then
+			toggleVoice(plySource, false, 'radio')
+		end
 		if radioPressed and not isNativeRadioActive() then
 			logger.info('[radio] %s left radio %s while we were talking, updating targets.', plySource, radioChannel)
 			addVoiceTargets(radioData, callData)
