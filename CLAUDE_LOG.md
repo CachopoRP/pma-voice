@@ -1,5 +1,37 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-02 (9) — Seguridad: `pma-voice:setPlayerCall` aceptaba cualquier call_id sin dueño · Claude
+
+**Pedido:** Oscar, tras revisar que la lógica del sistema de llamadas fuera server-sided, pidió
+valorar si `qbx_phone` dejaba algún residuo de Mumble -- no había ninguno, pero apareció un fallo
+de autorización real al revisar el camino completo.
+
+**Causa:** `RegisterNetEvent('pma-voice:setPlayerCall', callChannel)` acepta el `callChannel`
+directamente del cliente sin comprobar que le pertenezca -- a diferencia de las radios
+(`canJoinChannel`/`addChannelCheck` en `radio.lua`), las llamadas no tenían ningún check de
+pertenencia. Agravado por `qbx_phone/client/feature/calls.lua:GenerateCallId`: el `call_id` NO es
+aleatorio, es `math.ceil((digitos_telefono_A + digitos_telefono_B) / 100)` -- determinista a partir
+de los dos números, calculable sin fuerza bruta si se conocen (o se prueban) los dos números. Con
+canales nativos reales por debajo, unirse a un `callChannel` ajeno significa audio real, no solo un
+flag en una tabla.
+
+**Fix:** `callChecks` + `canJoinCall`/`addCallCheck`/`removeCallCheck` en `server/module/phone.lua`,
+mismo patrón que `radioChecks`/`canJoinChannel`/`addChannelCheck` de `radio.lua` (opt-in: si nadie
+registra un check para un `callChannel`, se permite -- compatibilidad con otros consumidores).
+`addPlayerToCall` ahora rechaza si `canJoinCall` devuelve false; `setPlayerCall` usa el resultado
+real (`wasAdded`) en vez de asumir que siempre entra, igual que ya hacía `setPlayerRadio`. El check
+se limpia solo cuando la llamada se vacía (en `removePlayerFromCall`), y también expuesto
+`removeCallCheck` para limpieza defensiva desde fuera. `qbx_phone/server/feature/calls.lua`:
+`AcceptCall` registra el check con los dos `source` reales (el único momento en que el servidor
+conoce con certeza quién es cada uno); `EndCall` lo limpia también de forma defensiva.
+
+**Aplicado en ambas ramas de `pma-voice`** (`crp-experimental` y `cachoporp`) porque el fallo existe
+también en el camino Mumble normal de producción, no es específico de Proyecto Voz -- `qbx_phone`
+solo tiene una rama (`cachoporp`) y llama al export sin comprobar su existencia primero, así que
+tenía que estar disponible en ambas.
+
+**Sin confirmar en vivo todavía.**
+
 ## 2026-09-02 (8) — Quinto punto de fuga: `assignedChannel` (canal base legado) sin guardar, degradado a un solo voice target · Claude
 
 **Reportado tras el fix (7):** desplegado y reiniciado, nueva llamada probada en vivo con

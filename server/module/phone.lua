@@ -13,6 +13,58 @@ local function isNativeCallsActive()
 	return GetConvarInt('voice_useNativeCalls', 0) == 1
 end
 
+-- 2026-09-02 (ver pma-voice/CLAUDE_LOG.md): `pma-voice:setPlayerCall` acepta
+-- el callChannel directamente del cliente sin ninguna comprobacion de
+-- pertenencia -- a diferencia de las radios (`canJoinChannel`/
+-- `addChannelCheck` en radio.lua), cualquiera podia adivinar/probar el
+-- call_id de una llamada ajena y unirse a escucharla, y con canales nativos
+-- reales por debajo eso significa audio real, no solo un flag en una tabla.
+-- Mismo patron que radio.lua: opt-in (si nadie registra un check para un
+-- callChannel, se permite -- compatibilidad con quien use pma-voice sin
+-- integrar esto), quien crea la llamada (qbx_phone) registra quienes son los
+-- dos source legitimos en el momento en que la llamada conecta de verdad.
+local callChecks = {} -- [callChannel] = cb(source): boolean
+
+--- comprueba si `source` puede unirse al callChannel dado
+---@param source number
+---@param callChannel number
+---@return boolean
+function canJoinCall(source, callChannel)
+	if callChecks[callChannel] then
+		return callChecks[callChannel](source)
+	end
+	return true
+end
+
+--- registra un check de quien puede unirse a un callChannel (mismo patron
+--- que addChannelCheck en radio.lua). Lo llama el recurso de telefono al
+--- conectar la llamada, con los dos source reales.
+---@param callChannel number
+---@param cb function
+function addCallCheck(callChannel, cb)
+	local channelType = type(callChannel)
+	local cbType = type(cb)
+	if channelType ~= "number" then
+		error(("'callChannel' expected 'number' got '%s'"):format(channelType))
+	end
+	if cbType ~= 'table' or not cb.__cfx_functionReference then
+		error(("'cb' expected 'function' got '%s'"):format(cbType))
+	end
+	callChecks[callChannel] = cb
+	logger.info("%s added a check to call %s", GetInvokingResource(), callChannel)
+end
+
+exports('addCallCheck', addCallCheck)
+
+--- quita el check de un callChannel (limpieza manual opcional -- tambien se
+--- limpia solo en removePlayerFromCall cuando la llamada se vacia)
+---@param callChannel number
+function removeCallCheck(callChannel)
+	callChecks[callChannel] = nil
+end
+
+exports('removeCallCheck', removeCallCheck)
+
 --- removes a player from the call for everyone in the call.
 ---@param source number the player to remove from the call
 ---@param callChannel number the call channel to remove them from
@@ -39,12 +91,24 @@ function removePlayerFromCall(source, callChannel)
 			end
 		end
 	end
+
+	if not next(callData[callChannel]) then
+		-- Llamada vacia -- limpiar tambien su check de autorizacion, no
+		-- dejarlo huerfano esperando a la siguiente llamada con este mismo
+		-- numero (independiente de si las llamadas nativas estan activas).
+		callChecks[callChannel] = nil
+	end
 end
 
 --- adds a player to a call
 ---@param source number the player to add to the call
 ---@param callChannel number the call channel to add them to
 function addPlayerToCall(source, callChannel)
+	if not canJoinCall(source, callChannel) then
+		logger.warn('[call] %s intento unirse a la llamada %s sin autorizacion (addCallCheck lo rechazo)', source,
+			callChannel)
+		return false
+	end
 	logger.verbose('[call] Added %s to call %s', source, callChannel)
 	-- check if the channel exists, if it does set the varaible to it
 	-- if not create it (basically if not callData make callData)
@@ -75,6 +139,8 @@ function addPlayerToCall(source, callChannel)
 				:format(channelId, source, tostring(ok), callChannel, json.encode(callData[callChannel])))
 		end
 	end
+
+	return true
 end
 
 -- Debug temporal (ver pma-voice/CLAUDE_LOG.md) -- para ver si dos jugadores
@@ -109,15 +175,19 @@ function setPlayerCall(source, _callChannel)
 		TriggerClientEvent('pma-voice:clSetPlayerCall', source, callChannel)
 	end
 
-	Player(source).state.callChannel = callChannel
-
+	-- 2026-09-02: usa el resultado real de addPlayerToCall (puede rechazar
+	-- por canJoinCall) en vez de asumir que siempre entra -- mismo patron que
+	-- setPlayerRadio/wasAdded en radio.lua.
 	if callChannel ~= 0 and plyVoice.call == 0 then
-		addPlayerToCall(source, callChannel)
+		local wasAdded = addPlayerToCall(source, callChannel)
+		Player(source).state.callChannel = wasAdded and callChannel or 0
 	elseif callChannel == 0 then
 		removePlayerFromCall(source, plyVoice.call)
+		Player(source).state.callChannel = 0
 	elseif plyVoice.call > 0 then
 		removePlayerFromCall(source, plyVoice.call)
-		addPlayerToCall(source, callChannel)
+		local wasAdded = addPlayerToCall(source, callChannel)
+		Player(source).state.callChannel = wasAdded and callChannel or 0
 	end
 end
 
