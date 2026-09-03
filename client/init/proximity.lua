@@ -12,9 +12,10 @@ local listeners = {}
 
 function orig_addProximityCheck(ply)
 	local tgtPed = GetPlayerPed(ply)
-	local voiceRange = GetConvar('voice_useNativeAudio', 'false') == 'true' and proximity * 3 or proximity
+	-- `voice_useNativeAudio` esta eliminada en Enhanced (ver VOZ.md) -- ya no
+	-- hay una escala distinta que compensar, `proximity` es la distancia real.
 	local distance = #(plyCoords - GetEntityCoords(tgtPed))
-	return distance < voiceRange, distance
+	return distance < proximity, distance
 end
 
 local addProximityCheck = orig_addProximityCheck
@@ -35,17 +36,48 @@ function addNearbyPlayers()
 	currentTargets = {}
 	MumbleClearVoiceTargetChannels(voiceTarget)
 	if LocalPlayer.state.disableProximity then return end
-	MumbleAddVoiceChannelListen(LocalPlayer.state.assignedChannel)
-	MumbleAddVoiceTargetChannel(voiceTarget, LocalPlayer.state.assignedChannel)
 
-	for source, _ in pairs(callData) do
-		if source ~= playerServerId then
-			local channel = MumbleGetVoiceChannelFromServerId(source)
-			if channel ~= -1 then
-				MumbleAddVoiceTargetChannel(voiceTarget, channel)
+	-- CORREGIDO 2026-09-02 (ver pma-voice/CLAUDE_LOG.md): "assignedChannel" es
+	-- el canal base de proximidad del pma-voice ORIGINAL (Mumble puro,
+	-- asignado una vez al conectar en server/main.lua:firstFreeChannel()).
+	-- VOZ.md documenta (con cita oficial de Cfx.re) que bajo voice_internal
+	-- MUMBLE_SET_VOICE_TARGET/MUMBLE_CLEAR_VOICE_TARGET quedan degradados a UN
+	-- SOLO target -- este bloque corria sin guardar en cada tick de
+	-- proximidad, forzando ese unico target de vuelta al canal base de
+	-- Mumble aunque el jugador estuviera en una llamada o burbuja nativa,
+	-- pisando en cada tick la ruta de audio real puesta por
+	-- AddPlayerToVoiceChannel.
+	if GetConvarInt('voice_useNativeCalls', 0) ~= 1 and GetConvarInt('voice_useNativeProximity', 0) ~= 1 then
+		MumbleAddVoiceChannelListen(LocalPlayer.state.assignedChannel)
+		MumbleAddVoiceTargetChannel(voiceTarget, LocalPlayer.state.assignedChannel)
+	end
+
+	-- CORREGIDO 2026-09-02 (ver pma-voice/CLAUDE_LOG.md): este bucle es el
+	-- enrutado de audio de llamadas del pma-voice ORIGINAL (Mumble puro) --
+	-- busca el canal Mumble del otro participante de la llamada y lo anade
+	-- como voice target. No llama a `toggleVoice`, asi que los dos fixes
+	-- anteriores (grep toggleVoice) no lo tocaron: seguia ejecutandose en
+	-- cada tick de proximidad con `voice_useNativeCalls` activo, pisando con
+	-- natives Mumble la pertenencia al canal nativo que ya puso el servidor
+	-- via AddPlayerToVoiceChannel.
+	if GetConvarInt('voice_useNativeCalls', 0) ~= 1 then
+		for source, _ in pairs(callData) do
+			if source ~= playerServerId then
+				local channel = MumbleGetVoiceChannelFromServerId(source)
+				if channel ~= -1 then
+					MumbleAddVoiceTargetChannel(voiceTarget, channel)
+				end
 			end
 		end
 	end
+
+	-- Fase 2 de Proyecto Voz (ver VOZ.md): con voice_useNativeProximity activa,
+	-- la proximidad base ya no se hace anadiendo a cada jugador cercano como
+	-- target de Mumble -- el jugador pertenece a un canal nativo espacial fijo
+	-- (uno por tramo, ver server/module/native_proximity.lua) y el engine se
+	-- encarga solo de la caida por distancia dentro de ese canal. El bucle de
+	-- arriba (callData / llamadas) sigue igual, eso todavia no ha migrado.
+	if GetConvarInt('voice_useNativeProximity', 0) == 1 then return end
 
 	local players = GetActivePlayers()
 	for i = 1, #players do
@@ -193,6 +225,15 @@ exports("setVoiceState", function(_voiceState, channel)
 	end
 	voiceState = _voiceState
 	if voiceState == "channel" then
+		-- Fase 2 de Proyecto Voz (ver VOZ.md): al entrar en una llamada el
+		-- jugador deja su canal nativo de proximidad -- si no, seguiria oyendo
+		-- a la gente cercana de fondo (doble audio) mientras dura la llamada.
+		-- addNearbyPlayers() ya deja de correr en este estado (el bucle
+		-- principal solo la llama si voiceState == "proximity"), pero la
+		-- pertenencia al canal nativo es aparte y no se limpia sola.
+		if GetConvarInt('voice_useNativeProximity', 0) == 1 then
+			TriggerServerEvent('pma-voice:server:leaveNativeProximity')
+		end
 		type_check({ channel, "number" })
 		-- 65535 is the highest a client id can go, so we add that to the base channel so we don't manage to get onto a players channel
 		channel = channel + 65535

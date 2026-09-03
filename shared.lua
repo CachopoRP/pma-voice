@@ -44,20 +44,16 @@ end
 Player = Player
 Entity = Entity
 
-if GetConvar('voice_useNativeAudio', 'false') == 'true' then
-	-- native audio distance seems to be larger then regular gta units
-	Cfg.voiceModes = {
-		{ 1.5, "Whisper" }, -- Whisper speech distance in gta distance units
-		{ 3.0, "Normal" },  -- Normal speech distance in gta distance units
-		{ 6.0, "Shouting" } -- Shout speech distance in gta distance units
-	}
-else
-	Cfg.voiceModes = {
-		{ 3.0,  "Whisper" }, -- Whisper speech distance in gta distance units
-		{ 7.0,  "Normal" },  -- Normal speech distance in gta distance units
-		{ 15.0, "Shouting" } -- Shout speech distance in gta distance units
-	}
-end
+-- `voice_useNativeAudio` esta en la lista oficial de convars eliminadas en
+-- Enhanced (ver VOZ.md, "Documentacion oficial completa") -- la distincion
+-- "audio nativo vs normal" que habia aqui era un vestigio muerto (el motor ya
+-- no la lee, solo devolvia lo que hubiera a mano en el server.cfg). Una sola
+-- tabla, calibrada sobre el ejemplo oficial de CreateVoiceChannel(1, 15.0).
+Cfg.voiceModes = {
+	{ 2.0,  "Whisper" },  -- Whisper speech distance in gta distance units
+	{ 6.0,  "Normal" },   -- Normal speech distance in gta distance units
+	{ 15.0, "Shouting" }, -- Shout speech distance in gta distance units
+}
 
 logger = {
 	log = function(message, ...)

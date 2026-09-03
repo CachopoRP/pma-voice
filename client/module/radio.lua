@@ -1,6 +1,16 @@
 local radioChannel = 0
 local radioNames = {}
 local disableRadioAnim = false
+
+-- Fase de radios de Proyecto Voz (ver VOZ.md). Con `voice_useNativeRadio`
+-- activa, el servidor mete/saca al jugador del canal nativo de la
+-- frecuencia y controla mute/deaf (ver server/module/radio.lua) -- eso ya
+-- basta para transmitir/recibir, no hace falta apuntar voice targets de
+-- Mumble (`addVoiceTargets`/`MumbleClearVoiceTargetPlayers`) para radio. Los
+-- de llamada (`callData`) y submixes (estatica, `toggleVoice`) siguen igual.
+local function isNativeRadioActive()
+	return GetConvarInt('voice_useNativeRadio', 0) == 1
+end
 local radioAnim = {
 	dict = "random@arrests",
 	anim = "generic_radio_enter",
@@ -51,7 +61,14 @@ function setTalkingOnRadio(plySource, enabled)
 	if not isRadioEnabled() then return logger.info("[radio] Ignoring setTalkingOnRadio. radioEnabled: %s disableRadio: %s", radioEnabled, LocalPlayer.state.disableRadio) end
 	-- If we're on a call we don't want to toggle their voice disabled this will break calls.
 	local enabled = enabled or callData[plySource]
-	toggleVoice(plySource, enabled, 'radio')
+	-- CORREGIDO 2026-09-02 (ver pma-voice/CLAUDE_LOG.md): toggleVoice rompia
+	-- el audio de llamadas nativas (MumbleSetVolumeOverrideByServerId sobre
+	-- un jugador cuyo audio ya no viaja por Mumble) -- mismo patron aqui,
+	-- nunca probado en vivo con radio nativa todavia. Saltado si el modo
+	-- nativo esta activo, igual que ya se hizo para llamadas.
+	if not isNativeRadioActive() then
+		toggleVoice(plySource, enabled, 'radio')
+	end
 	playMicClicks(enabled)
 end
 RegisterNetEvent('pma-voice:setTalkingOnRadio', setTalkingOnRadio)
@@ -66,7 +83,7 @@ function addPlayerToRadio(plySource, plyRadioName)
 	end
 	logger.info('[radio] %s joined radio %s %s', plySource, radioChannel,
 		radioPressed and " while we were talking, adding them to targets" or "")
-	if radioPressed then
+	if radioPressed and not isNativeRadioActive() then
 		addVoiceTargets(radioData, callData)
 	end
 end
@@ -78,9 +95,11 @@ RegisterNetEvent('pma-voice:addPlayerToRadio', addPlayerToRadio)
 function removePlayerFromRadio(plySource)
 	if plySource == playerServerId then
 		logger.info('[radio] Left radio %s, cleaning up.', radioChannel)
-		for tgt, _ in pairs(radioData) do
-			if tgt ~= playerServerId then
-				toggleVoice(tgt, false, 'radio')
+		if not isNativeRadioActive() then
+			for tgt, _ in pairs(radioData) do
+				if tgt ~= playerServerId then
+					toggleVoice(tgt, false, 'radio')
+				end
 			end
 		end
 		sendUIMessage({
@@ -89,10 +108,14 @@ function removePlayerFromRadio(plySource)
 		})
 		radioNames = {}
 		radioData = {}
-		addVoiceTargets(callData)
+		if not isNativeRadioActive() then
+			addVoiceTargets(callData)
+		end
 	else
-		toggleVoice(plySource, false, 'radio')
-		if radioPressed then
+		if not isNativeRadioActive() then
+			toggleVoice(plySource, false, 'radio')
+		end
+		if radioPressed and not isNativeRadioActive() then
 			logger.info('[radio] %s left radio %s while we were talking, updating targets.', plySource, radioChannel)
 			addVoiceTargets(radioData, callData)
 		else
@@ -193,7 +216,9 @@ RegisterCommand('+radiotalk', function()
 	if not radioPressed then
 		if radioChannel > 0 then
 			logger.info('[radio] Start broadcasting, update targets and notify server.')
-			addVoiceTargets(radioData, callData)
+			if not isNativeRadioActive() then
+				addVoiceTargets(radioData, callData)
+			end
 			TriggerServerEvent('pma-voice:setTalkingOnRadio', true)
 			radioPressed = true
 			local shouldPlayAnimation = isRadioAnimEnabled()
@@ -246,8 +271,10 @@ end, false)
 RegisterCommand('-radiotalk', function()
 	if radioChannel > 0 and radioPressed then
 		radioPressed = false
-		MumbleClearVoiceTargetPlayers(voiceTarget)
-		addVoiceTargets(callData)
+		if not isNativeRadioActive() then
+			MumbleClearVoiceTargetPlayers(voiceTarget)
+			addVoiceTargets(callData)
+		end
 		TriggerEvent("pma-voice:radioActive", false)
 		LocalPlayer.state:set("radioActive", false, true);
 		playMicClicks(false)

@@ -3,6 +3,39 @@ local msgpack_pack_args = msgpack.pack_args
 
 local radioChecks = {}
 
+-- Fase de radios de Proyecto Voz (ver VOZ.md) -- aislada detras de
+-- `voice_useNativeRadio` (0 por defecto). Con la convar activa, cada
+-- frecuencia de radio (`radioChannel`, el numero que usa la logica de arriba,
+-- nada que ver con el `channelId` de la native) tiene un canal nativo
+-- NON_SPATIAL propio (modo 0 -- "2D, sin caida por distancia", igual que
+-- el ejemplo oficial de radio en la documentacion de Cfx.re). La pertenencia
+-- al canal la sigue llevando toda la logica de arriba (radioData, checks,
+-- etc.) tal cual; esto solo añade el transporte de audio real por debajo.
+local nativeRadioChannels = {} -- [radioChannel] = channelId
+
+local function isNativeRadioActive()
+	return GetConvarInt('voice_useNativeRadio', 0) == 1
+end
+
+--- Devuelve el canal nativo de una frecuencia de radio, creandolo si hace
+--- falta -- POCOS canales fijos y de larga duracion (uno por frecuencia
+--- realmente usada), igual que recomienda Fase 1 en VOZ.md.
+---@param radioChannel number
+---@return number|nil
+local function getOrCreateNativeRadioChannel(radioChannel)
+	local channelId = nativeRadioChannels[radioChannel]
+	if channelId then return channelId end
+
+	channelId = createNativeChannel(NATIVE_VOICE_MODE.NON_SPATIAL, 0.0)
+	if not channelId then
+		logger.error('[radio] No se pudo crear canal nativo para la frecuencia %s', radioChannel)
+		return nil
+	end
+	nativeRadioChannels[radioChannel] = channelId
+	logger.info('[radio] Frecuencia %s -> canal nativo %s', radioChannel, channelId)
+	return channelId
+end
+
 --- checks if the player can join the channel specified
 --- @param source number the source of the player
 --- @param radioChannel number the channel they're trying to join
@@ -95,6 +128,20 @@ function addPlayerToRadio(source, radioChannel)
 	radioData[radioChannel][source] = false
 	TriggerClientEvent('pma-voice:syncRadioData', source, radioData[radioChannel],
 		GetConvarInt("voice_syncPlayerNames", 0) == 1 and plyName)
+
+	if isNativeRadioActive() then
+		local channelId = getOrCreateNativeRadioChannel(radioChannel)
+		if channelId then
+			addPlayerToNativeChannel(channelId, source)
+			-- Silenciado por defecto -- solo se destapa mientras se mantiene
+			-- pulsado +radiotalk (ver setTalkingOnRadio mas abajo). Con la
+			-- API nueva no hace falta "voice target" aparte -- pertenecer al
+			-- canal ya basta para transmitir/recibir, mute/deaf es el unico
+			-- control que necesitamos.
+			setPlayerMutedInNativeChannel(channelId, source, true)
+		end
+	end
+
 	return true
 end
 
@@ -108,6 +155,13 @@ function removePlayerFromRadio(source, radioChannel)
 	radioData[radioChannel][source] = nil
 	voiceData[source] = voiceData[source] or defaultTable(source)
 	voiceData[source].radio = 0
+
+	if isNativeRadioActive() then
+		local channelId = nativeRadioChannels[radioChannel]
+		if channelId then
+			removePlayerFromNativeChannel(channelId, source)
+		end
+	end
 end
 
 -- TODO: Implement this in a way that allows players to be on multiple channels
@@ -163,6 +217,14 @@ function setTalkingOnRadio(talking)
 		radioTbl[source] = talking
 		logger.verbose('[radio] Set %s to talking: %s on radio %s', source, talking, plyVoice.radio)
 		triggerEventForRadioChannel('pma-voice:setTalkingOnRadio', radioTbl, source, talking)
+
+		if isNativeRadioActive() then
+			local channelId = nativeRadioChannels[plyVoice.radio]
+			if channelId then
+				-- talking=true -> destapar (muted=false); PTT soltado -> volver a silenciar.
+				setPlayerMutedInNativeChannel(channelId, source, not talking)
+			end
+		end
 	end
 end
 

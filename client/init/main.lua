@@ -321,16 +321,28 @@ end
 --- handles initializiation for whenever radio or call data changes
 --- calls should always be last because they're assumed to always be enabled so
 --- theres no delay in talking.
+--- CORREGIDO 2026-09-02 (ver pma-voice/CLAUDE_LOG.md): segundo punto de
+--- entrada de toggleVoice para llamadas/radio que se nos habia escapado al
+--- guardar solo client/module/phone.lua -- este se dispara via
+--- pma-voice:syncCallData (justo el evento que recibe quien inicia la
+--- llamada), asi que sin este guard el fix anterior no tenia efecto real.
 function handleRadioAndCallInit()
-	for tgt, enabled in pairs(radioData) do
-		if tgt ~= playerServerId then
-			toggleVoice(tgt, enabled, 'radio')
+	local nativeRadio = GetConvarInt('voice_useNativeRadio', 0) == 1
+	local nativeCalls = GetConvarInt('voice_useNativeCalls', 0) == 1
+
+	if not nativeRadio then
+		for tgt, enabled in pairs(radioData) do
+			if tgt ~= playerServerId then
+				toggleVoice(tgt, enabled, 'radio')
+			end
 		end
 	end
 
-	for tgt, enabled in pairs(callData) do
-		if tgt ~= playerServerId then
-			toggleVoice(tgt, true, 'call')
+	if not nativeCalls then
+		for tgt, enabled in pairs(callData) do
+			if tgt ~= playerServerId then
+				toggleVoice(tgt, true, 'call')
+			end
 		end
 	end
 end

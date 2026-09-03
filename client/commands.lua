@@ -34,7 +34,16 @@ end)
 
 function setProximityState(proximityRange, isCustom)
 	local voiceModeData = Cfg.voiceModes[mode]
-	MumbleSetTalkerProximity(proximityRange + 0.0)
+	-- Fase 2 de Proyecto Voz (ver VOZ.md): ver comentario igual en events.lua.
+	local useNativeProximity = GetConvarInt('voice_useNativeProximity', 0) == 1
+	MumbleSetTalkerProximity(useNativeProximity and 0.0 or (proximityRange + 0.0))
+	if useNativeProximity and not isCustom then
+		-- Los tramos custom (overrideProximityRange) no tienen canal nativo
+		-- fijo -- esos exports los usan otros recursos para casos puntuales
+		-- (ver VOZ.md, exports a preservar) y por ahora se quedan sin canal
+		-- nativo hasta decidir si les hace falta uno propio.
+		TriggerServerEvent('pma-voice:server:joinNativeProximityTier', mode)
+	end
 	LocalPlayer.state:set('proximity', {
 		index = mode,
 		distance = proximityRange,
@@ -77,6 +86,11 @@ RegisterCommand('cycleproximity', function()
 
 	setProximityState(Cfg.voiceModes[mode][1], false)
 	TriggerEvent('pma-voice:setTalkingMode', mode)
+	-- Debug temporal (ver pma-voice/CLAUDE_LOG.md) -- para ver si el ciclo
+	-- de verdad recorre las #Cfg.voiceModes entradas. Quitar cuando se
+	-- confirme resuelto.
+	print(('[cycle debug] mode=%s/%s -> %s (%sm)'):format(mode, #Cfg.voiceModes, Cfg.voiceModes[mode][2],
+		Cfg.voiceModes[mode][1]))
 end, false)
 if gameVersion == 'fivem' then
 	RegisterKeyMapping('cycleproximity', 'Cycle Proximity', 'keyboard', GetConvar('voice_defaultCycle', 'F11'))
