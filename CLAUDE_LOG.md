@@ -1,5 +1,81 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-04 — Auditoría completa de natives Mumble restantes, cierra los últimos huecos sin condicionar · Claude
+
+**Pedido por Oscar:** "revisa en pma y en phone donde se usan nativas de mumble y vamos a acabar
+de parchearlas de una vez por todas" -- el aviso `The Mumble native functions are deprecated...`
+sigue en consola pese a que Proyecto Voz (Fases 0-4) ya está construido.
+
+**Revisado `qbx_phone` primero:** ninguna referencia real -- los únicos matches de "Mumble" son en
+`web/node_modules/react-icons` (el icono `SiMumble`), nada que ver con voz. Todo el trabajo real
+está en `pma-voice`.
+
+**Hallazgo clave, no es solo código:** `rpbase/server-enhanced.cfg` (el `server.cfg` real de
+producción) **nunca ha tenido ninguna de las tres convars de Proyecto Voz activas**
+(`voice_useNativeProximity`, `voice_useNativeRadio`, `voice_useNativeCalls` -- ninguna aparece en
+el archivo, todas caen al `0` por defecto). Pese a que Fase 3 (llamadas) está confirmada
+funcionando en vivo en `crp-experimental` (ver entradas 2026-09-03), producción sigue **100% en el
+camino Mumble** hoy mismo. Esto es una decisión aparte (arrancar las convars en real), no tocado en
+esta pasada -- ver más abajo.
+
+**Auditoría de cada `Mumble*` restante en el código** (grep completo de cada archivo, no solo los
+ya tocados en pasadas anteriores):
+- **Ya estaba bien condicionado** (confirmado, no tocado): todo `client/module/radio.lua` (cada
+  llamada envuelta en `not isNativeRadioActive()`), todo `client/module/phone.lua` (envuelto en
+  `not isNativeCallsActive()`), `client/init/main.lua:handleRadioAndCallInit` (los dos bucles que
+  llaman a `toggleVoice`).
+- **4 huecos reales encontrados y cerrados** (llamaban a un native Mumble incondicionalmente, o
+  solo neutralizaban el valor en vez de saltarse la llamada):
+  1. `client/init/proximity.lua:addNearbyPlayers()` -- el tick principal (cada
+     `voice_refreshRate`, 200ms por defecto, se ejecuta siempre que hay match, con o sin voz
+     nativa): `MumbleGetTalkerProximity()` y `MumbleClearVoiceTargetChannels(voiceTarget)` corrían
+     sin condición ninguna, incluso con las dos convars de proximidad/llamadas activas -- eran el
+     único bloque de esta función que no se había tocado en los fixes anteriores (2026-09-02, (7) y
+     (8)). Con la migración completa esto era un native deprecado disparándose en cada tick del
+     100% de la partida en balde.
+  2. `client/events.lua:handleInitialState()` -- se ejecuta una vez al conectar (`mumbleConnected`)
+     y otra vez cada vez que se vuelve al estado "proximity" tras colgar una llamada
+     (`setVoiceState`) -- montaba el canal/target base de Mumble (`MumbleClearVoiceTarget`,
+     `MumbleSetVoiceTarget`, bucle de `MumbleSetVoiceChannel`, `MumbleAddVoiceTargetChannel`) sin
+     comprobar ninguna convar, mismo canal legado "assignedChannel" que ya se documentó pisando la
+     ruta nativa en la entrada 2026-09-02 (8) -- ahora se salta entero si proximidad o llamadas
+     nativas están activas.
+  3. `client/commands.lua:setProximityState()` -- `MumbleSetTalkerProximity` se llamaba siempre,
+     solo cambiaba si el valor era `0.0` (neutralizado) o el rango real -- pasa a saltarse la
+     llamada entera con proximidad nativa activa en vez de llamarla con un valor que de todas
+     formas no importa.
+  4. `client/init/main.lua:resyncVolume()` -- el ajuste manual de volumen (`/vol`,
+     `setRadioVolume`/`setCallVolume`) llamaba a `MumbleSetVolumeOverrideByServerId` sobre cada
+     miembro de radio/llamada sin comprobar el modo nativo. No hay todavía un equivalente nativo de
+     volumen por oyente (ver huecos abajo), así que de momento simplemente no aplica el ajuste bajo
+     el modo nativo correspondiente en vez de llamar al native en vano.
+
+**Huecos que quedan a propósito, sin native equivalente todavía (no son "olvidos", VOZ.md ya los
+lista como fases futuras):**
+- **Mute de admin** (`toggleMutePlayer`/`/muteply`, `client/init/main.lua`) -- Fase 5 de VOZ.md
+  ("Mute/deaf de admin"), nunca implementada. Sigue 100% sobre
+  `MumbleSetVolumeOverrideByServerId`, sin gating, porque no hay ningún `SetPlayerMutedInVoiceChannel`
+  cableado todavía -- quitarle Mumble sin más rompería el mute de admin del todo.
+- **Estática/submix de radio** (`client/init/submix.lua`, `restoreDefaultSubmix` en
+  `client/init/main.lua`) -- Fase 6 de VOZ.md, tampoco implementada. Además esto reacciona a un
+  state bag (`submix`) que puede estarlo poniendo un recurso externo, no solo pma-voice, así que
+  gatearlo a ciegas por convar habría sido más arriesgado que dejarlo.
+- **Modo espectador** (`addChannelListener`/`setSpectatorMode`, `client/init/proximity.lua`) -- sin
+  fase equivalente planteada en VOZ.md todavía, se deja igual.
+
+**Sin confirmar en vivo todavía** -- son cambios de gating puro (Lua, sin build), pero tocan el
+tick principal de proximidad que corre en el 100% de las conexiones. Verificar igual que el resto
+de fases de Proyecto Voz: con las convars nativas activas en `crp-experimental`, confirmar que
+sigue sonando proximidad/llamadas igual que antes de este cambio, y que el aviso de consola deja de
+aparecer durante la partida (puede seguir apareciendo una vez al arrancar el recurso si el propio
+motor lo imprime al registrar los natives, eso no es controlable desde aquí).
+
+**Pendiente real, decisión de Oscar:** activar `voice_useNativeProximity`/`voice_useNativeRadio`/
+`voice_useNativeCalls` en `rpbase/server-enhanced.cfg` (producción). Sin eso, nada de este fix (ni
+el resto de Proyecto Voz) cambia el comportamiento real en el server de José -- solo deja el camino
+nativo completamente listo para cuando se active. `voice_useNativeRadio` en concreto sigue sin
+haberse probado en vivo nunca según `VOZ.md` (Fase 4) -- probarla antes de activarla en real.
+
 ## 2026-09-03 (5) — Merge de `crp-experimental` a `cachoporp` (PR #1) · Claude
 
 Todo lo de Proyecto Voz confirmado en vivo hoy (canales nativos, proximidad, llamadas con audio
