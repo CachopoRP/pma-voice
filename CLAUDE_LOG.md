@@ -1,5 +1,21 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-03 (2) — Fase 2 de Teléfono: export `muteInCall` para silenciar · Claude
+
+**Pedido:** siguiendo el plan de fusión Teléfono+Contactos (ver `qbx_phone/CLAUDE_LOG.md`), Fase 2
+añade Silenciar/Altavoz a la pantalla de llamada. Altavoz es enrutado de audio 100% cliente, no
+toca `pma-voice`. Silenciar sí necesita algo nuevo aquí.
+
+**Hecho:** `muteInCall(source, callChannel, muted)` en `server/module/phone.lua`, exportado. Hacía
+falta porque `qbx_phone` solo conoce su propio `call_id` (`callChannel`), no el `channelId` nativo
+interno (`nativeCallChannels` es local al módulo) -- resuelve uno a partir del otro y llama a
+`setPlayerMutedInNativeChannel` (ya existía, de la Fase 1 de canales nativos). No-op si
+`voice_useNativeCalls` está apagado o la llamada no tiene canal nativo todavía -- el mute por
+Mumble puro no está cableado, coherente con que todo lo demás de llamadas ya vive detrás de esa
+convar.
+
+**Sin confirmar en vivo todavía.**
+
 ## 2026-09-03 — Fix: crash real en vivo, `removeCallCheck` indexaba con nil · Claude
 
 **Reportado:** llamada probada en vivo con el fix (9) ya desplegado -- **funcionó, audio

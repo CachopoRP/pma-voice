@@ -72,6 +72,26 @@ end
 
 exports('removeCallCheck', removeCallCheck)
 
+-- Fase 2 del plan de Telefono (ver qbx_phone/CLAUDE_LOG.md): silenciar en
+-- llamada. qbx_phone solo conoce el callChannel (su propio call_id), no el
+-- channelId nativo interno (nativeCallChannels es local a este modulo) --
+-- export dedicado para no tener que exponer esa tabla entera hacia fuera.
+--- silencia/des-silencia a `source` en la llamada `callChannel`. No-op (y
+--- devuelve false) si las llamadas nativas no estan activas o la llamada no
+--- tiene canal nativo todavia -- el mute por Mumble puro no esta cableado.
+---@param source number
+---@param callChannel number
+---@param muted boolean
+---@return boolean
+function muteInCall(source, callChannel, muted)
+	if not isNativeCallsActive() then return false end
+	local channelId = nativeCallChannels[callChannel]
+	if not channelId then return false end
+	return setPlayerMutedInNativeChannel(channelId, source, muted)
+end
+
+exports('muteInCall', muteInCall)
+
 --- removes a player from the call for everyone in the call.
 ---@param source number the player to remove from the call
 ---@param callChannel number the call channel to remove them from
