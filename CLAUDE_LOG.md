@@ -1,6 +1,6 @@
 # CLAUDE_LOG — pma-voice
 
-## 2026-09-03 (4) — Diagnostico real: llamadas no conectaban audio porque `voice_useNativeCalls` seguia en 0 · Claude
+## 2026-09-03 (4) — Diagnostico real: llamadas no conectaban audio porque `voice_useNativeCalls` seguia en 0 -- CONFIRMADO en vivo · Claude
 
 **Reportado por Oscar in-game, tras una sesion larga de descarte:** al aceptar una llamada, las
 pantallas se quedaban bien pero **no se oian entre los dos jugadores**. El sintoma sobrevivio a
@@ -42,9 +42,11 @@ apagado. Ambas cosas pueden ser ciertas a la vez: "las natives funcionan" (vtest
 real no las usa" (convar apagada) -- por eso hizo falta revisar la logica de conexion completa en
 vez de fiarse solo del resultado del arnes.
 
-**Fix:** ninguno de codigo -- es un `setr voice_useNativeCalls 1` pendiente en el `server.cfg` del
-entorno de pruebas (`crp-experimental`, nunca en produccion todavia) + `restart pma-voice`.
-Pendiente de que Oscar lo ponga y confirme una llamada real con audio.
+**Fix:** ninguno de codigo -- era un `setr voice_useNativeCalls 1` que faltaba en el `server.cfg`
+del entorno de pruebas (`crp-experimental`, nunca en produccion todavia) + `restart pma-voice`.
+**Oscar lo puso y confirmo en vivo: llamada real con audio funcionando.** Fases 0-3 de Proyecto Voz
+(canales/proximidad/llamadas nativas) dadas por buenas en `crp-experimental` para llamadas; Fase 4
+(radios, `voice_useNativeRadio`) sigue sin promover/probar.
 
 **Nota para la proxima vez:** cuando "algo no conecta" pero el arnes de pruebas SI funciona, revisar
 primero que convars/interruptores de fase estan realmente activos en el `server.cfg` real (no en el
