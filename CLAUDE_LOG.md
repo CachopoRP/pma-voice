@@ -1,5 +1,57 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-03 (4) — Diagnostico real: llamadas no conectaban audio porque `voice_useNativeCalls` seguia en 0 · Claude
+
+**Reportado por Oscar in-game, tras una sesion larga de descarte:** al aceptar una llamada, las
+pantallas se quedaban bien pero **no se oian entre los dos jugadores**. El sintoma sobrevivio a
+varias comprobaciones intermedias que descartaron otras causas:
+- El aviso "Mumble native functions are deprecated" en consola -- investigado, es ruido esperado
+  del nucleo de `pma-voice` (natives Mumble sin fecha de retirada anunciada), no relacionado.
+- `Player 2 is not connected.` -- confirmado que era un error del propio Oscar probando el arnes
+  de pruebas (`/vtest_b_nonspatial_mas_burbuja`) con serverIds equivocados, no un bug real: con
+  los ids correctos el comando conecta perfecto.
+- Reinicio de `pma-voice`/`qbx_phone` tras los deploys de hoy -- hecho, confirmado por Oscar, no
+  era esto (aunque SI era un problema real y separado, ver mas abajo).
+- Bug real de `EndCall` (ver entrada 13 de `qbx_phone/CLAUDE_LOG.md`, "las llamadas vuelven a no
+  funcionar" con el mismo par de telefonos) -- corregido y desplegado, pero no explicaba que la
+  PRIMERA llamada entre dos personas tampoco conectara audio.
+
+**Causa real:** toda la logica de conexion de canales de una llamada real esta condicionada a la
+convar `voice_useNativeCalls` (`0` por defecto, apagada) -- y esa convar **nunca se promovio a
+`1`** en el `server.cfg` real, se quedo en el valor por defecto documentado en `VOZ.md` para
+produccion. Con la convar en `0`:
+- Servidor (`server/module/phone.lua:260`, `addPlayerToCall`): el bloque entero que crea/usa el
+  canal nativo (`NON_SPATIAL`) para la llamada se salta -- **no se crea ningun canal nativo**.
+- Cliente (`client/module/phone.lua:26`): en vez de confiar en el canal nativo, cae al camino
+  viejo -- `toggleVoice(plySource, true, 'call')`, que enruta audio con las natives de Mumble
+  deprecadas.
+
+Y ese camino de Mumble puro es **el que ya se documento roto** el 2026-08-31/09-01 (ver entradas
+de esas fechas mas abajo): bajo `voice_internal` (que usa Enhanced), la capa de compatibilidad
+degrada `MUMBLE_SET_VOICE_TARGET`/`MUMBLE_CLEAR_VOICE_TARGET` a "como si solo hubiera un voice
+target" -- exactamente la razon original por la que se construyo todo el sistema de canales
+nativos (Proyecto Voz, Fases 0-4). Osea: **la llamada real seguia cayendo en el mismo camino roto
+que motivo todo el proyecto**, porque el interruptor que activa el camino nuevo nunca se encendio
+en el `server.cfg`.
+
+**Por que el arnes de pruebas (`/vtest_*`, `voice_native_test.lua`) SI conectaba perfecto:** sus
+comandos llaman a `createNativeChannel`/`addPlayerToNativeChannel` directamente, sin comprobar
+ninguna convar -- por eso confirmaba que las natives de canal en si funcionan bien, pero no podia
+detectar que el camino REAL (`addPlayerToCall`/`toggleVoice`) seguia condicionado a un interruptor
+apagado. Ambas cosas pueden ser ciertas a la vez: "las natives funcionan" (vtest) y "la llamada
+real no las usa" (convar apagada) -- por eso hizo falta revisar la logica de conexion completa en
+vez de fiarse solo del resultado del arnes.
+
+**Fix:** ninguno de codigo -- es un `setr voice_useNativeCalls 1` pendiente en el `server.cfg` del
+entorno de pruebas (`crp-experimental`, nunca en produccion todavia) + `restart pma-voice`.
+Pendiente de que Oscar lo ponga y confirme una llamada real con audio.
+
+**Nota para la proxima vez:** cuando "algo no conecta" pero el arnes de pruebas SI funciona, revisar
+primero que convars/interruptores de fase estan realmente activos en el `server.cfg` real (no en el
+repo, la maquina manda -- ver `rpbase/conclaveclaude.md`) antes de asumir que el bug esta en la
+logica -- el codigo puede estar perfectamente bien y seguir sin conectar si el interruptor que lo
+activa nunca se encendio.
+
 ## 2026-09-03 (3) — Altavoz real: gente cerca oye la llamada, silenciada · Claude
 
 **Contexto:** al revisar el mockup de Teléfono, dije que "Altavoz" era solo cosmético (audio 100%
