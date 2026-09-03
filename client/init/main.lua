@@ -191,9 +191,18 @@ function resyncVolume(volumeType, newVolume)
 		resyncVolume("radio", newVolume)
 		resyncVolume("call", newVolume)
 	elseif volumeType == "radio" then
-		updateVolumes(radioData, newVolume)
+		-- Con voice_useNativeRadio activa el audio ya no viaja por Mumble --
+		-- ver VOZ.md, no hay todavia un equivalente nativo de volumen por
+		-- oyente (Fase 5 solo cubre mute/deaf, no override de volumen), asi
+		-- que de momento el ajuste manual de volumen simplemente no aplica
+		-- bajo radio nativa en vez de llamar a un native deprecado en vano.
+		if GetConvarInt('voice_useNativeRadio', 0) ~= 1 then
+			updateVolumes(radioData, newVolume)
+		end
 	elseif volumeType == "call" then
-		updateVolumes(callData, newVolume)
+		if GetConvarInt('voice_useNativeCalls', 0) ~= 1 then
+			updateVolumes(callData, newVolume)
+		end
 	end
 end
 

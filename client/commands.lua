@@ -36,7 +36,9 @@ function setProximityState(proximityRange, isCustom)
 	local voiceModeData = Cfg.voiceModes[mode]
 	-- Fase 2 de Proyecto Voz (ver VOZ.md): ver comentario igual en events.lua.
 	local useNativeProximity = GetConvarInt('voice_useNativeProximity', 0) == 1
-	MumbleSetTalkerProximity(useNativeProximity and 0.0 or (proximityRange + 0.0))
+	if not useNativeProximity then
+		MumbleSetTalkerProximity(proximityRange + 0.0)
+	end
 	if useNativeProximity and not isCustom then
 		-- Los tramos custom (overrideProximityRange) no tienen canal nativo
 		-- fijo -- esos exports los usan otros recursos para casos puntuales

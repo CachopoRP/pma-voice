@@ -7,22 +7,33 @@ function handleInitialState()
 	-- Mumble -- ponerlo a 0 evita que la proximidad "de base" del engine se
 	-- solape con el canal nativo (doble audio).
 	local useNativeProximity = GetConvarInt('voice_useNativeProximity', 0) == 1
-	MumbleSetTalkerProximity(useNativeProximity and 0.0 or (voiceModeData[1] + 0.0))
+	local useNativeCalls = GetConvarInt('voice_useNativeCalls', 0) == 1
+	if not useNativeProximity then
+		MumbleSetTalkerProximity(voiceModeData[1] + 0.0)
+	end
 	if useNativeProximity then
 		TriggerServerEvent('pma-voice:server:joinNativeProximityTier', mode)
 	end
-	MumbleClearVoiceTarget(voiceTarget)
-	MumbleSetVoiceTarget(voiceTarget)
-	MumbleSetVoiceChannel(LocalPlayer.state.assignedChannel)
 
-	while MumbleGetVoiceChannelFromServerId(playerServerId) ~= LocalPlayer.state.assignedChannel do
-		Wait(100)
+	-- Mismo canal base "assignedChannel" que addNearbyPlayers salta cuando
+	-- alguna de las dos convars nativas esta activa (ver
+	-- pma-voice/CLAUDE_LOG.md, 2026-09-02 (8)) -- esto es la version de
+	-- conexion inicial del mismo bloque, se salta igual para no llamar
+	-- natives Mumble que de todas formas se van a pisar/ignorar.
+	if not useNativeCalls and not useNativeProximity then
+		MumbleClearVoiceTarget(voiceTarget)
+		MumbleSetVoiceTarget(voiceTarget)
 		MumbleSetVoiceChannel(LocalPlayer.state.assignedChannel)
+
+		while MumbleGetVoiceChannelFromServerId(playerServerId) ~= LocalPlayer.state.assignedChannel do
+			Wait(100)
+			MumbleSetVoiceChannel(LocalPlayer.state.assignedChannel)
+		end
+
+		MumbleAddVoiceTargetChannel(voiceTarget, LocalPlayer.state.assignedChannel)
 	end
 
 	isInitialized = true
-
-	MumbleAddVoiceTargetChannel(voiceTarget, LocalPlayer.state.assignedChannel)
 
 	addNearbyPlayers()
 end

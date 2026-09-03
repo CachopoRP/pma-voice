@@ -32,9 +32,29 @@ function addNearbyPlayers()
 	if disableUpdates then return end
 	-- update here so we don't have to update every call of addProximityCheck
 	plyCoords = GetEntityCoords(PlayerPedId())
-	proximity = MumbleGetTalkerProximity()
 	currentTargets = {}
-	MumbleClearVoiceTargetChannels(voiceTarget)
+
+	local nativeProximity = GetConvarInt('voice_useNativeProximity', 0) == 1
+	local nativeCalls = GetConvarInt('voice_useNativeCalls', 0) == 1
+
+	-- `proximity` solo lo lee orig_addProximityCheck, y esa funcion solo se
+	-- llama desde el bucle de mas abajo, que ya no corre con proximidad
+	-- nativa activa -- no hace falta pedirsela a Mumble si no se va a usar.
+	if not nativeProximity then
+		proximity = MumbleGetTalkerProximity()
+	end
+
+	-- Ultimo Mumble* que quedaba sin condicion aqui: con las dos convars
+	-- activas ninguno de los tres bloques de abajo va a anadir nada a
+	-- voiceTarget, asi que limpiarlo cada tick (200ms por defecto) era un
+	-- native deprecado disparandose en balde durante el 100% del tiempo de
+	-- juego una vez la migracion esta completa. Aparte de la nota de la
+	-- entrada 2026-09-02(8), este era el ultimo hueco -- todo lo de mas
+	-- abajo en esta funcion ya estaba bien condicionado.
+	if not (nativeProximity and nativeCalls) then
+		MumbleClearVoiceTargetChannels(voiceTarget)
+	end
+
 	if LocalPlayer.state.disableProximity then return end
 
 	-- CORREGIDO 2026-09-02 (ver pma-voice/CLAUDE_LOG.md): "assignedChannel" es
@@ -47,7 +67,7 @@ function addNearbyPlayers()
 	-- Mumble aunque el jugador estuviera en una llamada o burbuja nativa,
 	-- pisando en cada tick la ruta de audio real puesta por
 	-- AddPlayerToVoiceChannel.
-	if GetConvarInt('voice_useNativeCalls', 0) ~= 1 and GetConvarInt('voice_useNativeProximity', 0) ~= 1 then
+	if not nativeCalls and not nativeProximity then
 		MumbleAddVoiceChannelListen(LocalPlayer.state.assignedChannel)
 		MumbleAddVoiceTargetChannel(voiceTarget, LocalPlayer.state.assignedChannel)
 	end
@@ -60,7 +80,7 @@ function addNearbyPlayers()
 	-- cada tick de proximidad con `voice_useNativeCalls` activo, pisando con
 	-- natives Mumble la pertenencia al canal nativo que ya puso el servidor
 	-- via AddPlayerToVoiceChannel.
-	if GetConvarInt('voice_useNativeCalls', 0) ~= 1 then
+	if not nativeCalls then
 		for source, _ in pairs(callData) do
 			if source ~= playerServerId then
 				local channel = MumbleGetVoiceChannelFromServerId(source)
@@ -77,7 +97,7 @@ function addNearbyPlayers()
 	-- (uno por tramo, ver server/module/native_proximity.lua) y el engine se
 	-- encarga solo de la caida por distancia dentro de ese canal. El bucle de
 	-- arriba (callData / llamadas) sigue igual, eso todavia no ha migrado.
-	if GetConvarInt('voice_useNativeProximity', 0) == 1 then return end
+	if nativeProximity then return end
 
 	local players = GetActivePlayers()
 	for i = 1, #players do
