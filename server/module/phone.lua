@@ -92,6 +92,109 @@ end
 
 exports('muteInCall', muteInCall)
 
+-- Altavoz de verdad (no solo cosmetico, ver conversacion 2026-09-03): la
+-- gente cerca de quien tiene la llamada en altavoz debe OIR la conversacion
+-- (las dos partes), pero no poder hablar dentro de ella. SPATIAL/TEMPORARY
+-- no vale para esto -- su caida de audio por distancia la calcula el motor
+-- sobre la posicion real de CADA miembro del canal, y el interlocutor remoto
+-- normalmente no esta fisicamente cerca (podria estar al otro lado del
+-- mapa) -- meterlo en un canal SPATIAL lo silenciaria tambien para quien
+-- SI esta en la llamada. Por eso esto añade oyentes al mismo canal
+-- NON_SPATIAL de la llamada (sin caida por distancia) a mano, con un hilo de
+-- proximidad real sobre la posicion de quien tiene el altavoz -- y los
+-- silencia con setPlayerMutedInNativeChannel en cuanto entran (oyen, no
+-- transmiten).
+local SPEAKER_RADIUS = 6.0
+local speakerState = {} -- [callChannel] = { holder = source, members = {[source]=true} }
+
+local function clearCallSpeaker(callChannel)
+	local state = speakerState[callChannel]
+	if not state then return end
+	local channelId = nativeCallChannels[callChannel]
+	if channelId then
+		for member in pairs(state.members) do
+			removePlayerFromNativeChannel(channelId, member)
+		end
+	end
+	speakerState[callChannel] = nil
+end
+
+--- activa/desactiva el altavoz de `source` en la llamada `callChannel` --
+--- mientras este activo, los jugadores que se acerquen a `source` entran
+--- (silenciados) al canal de la llamada, y salen al alejarse.
+---@param source number
+---@param callChannel number
+---@param enabled boolean
+---@return boolean
+function setCallSpeaker(source, callChannel, enabled)
+	if not isNativeCallsActive() then return false end
+	if not nativeCallChannels[callChannel] then return false end
+
+	if enabled then
+		speakerState[callChannel] = { holder = source, members = {} }
+	else
+		clearCallSpeaker(callChannel)
+	end
+	return true
+end
+
+exports('setCallSpeaker', setCallSpeaker)
+
+CreateThread(function()
+	while true do
+		if not next(speakerState) then
+			Wait(2000)
+			goto continue
+		end
+
+		for callChannel, state in pairs(speakerState) do
+			local channelId = nativeCallChannels[callChannel]
+			local holderPed = channelId and GetPlayerPed(state.holder) or 0
+
+			if not channelId or holderPed == 0 then
+				-- Llamada colgada o el que tenia el altavoz se desconecto --
+				-- limpiar en vez de dejarlo intentando cada tick.
+				clearCallSpeaker(callChannel)
+				goto continue_call
+			end
+
+			local holderCoords = GetEntityCoords(holderPed)
+			local nearby = {}
+			for _, plyIdStr in ipairs(GetPlayers()) do
+				local ply = tonumber(plyIdStr)
+				if ply and ply ~= state.holder and not (callData[callChannel] and callData[callChannel][ply]) then
+					local ped = GetPlayerPed(ply)
+					if ped ~= 0 then
+						local dist = #(holderCoords - GetEntityCoords(ped))
+						if dist <= SPEAKER_RADIUS then
+							nearby[ply] = true
+						end
+					end
+				end
+			end
+
+			for ply in pairs(nearby) do
+				if not state.members[ply] then
+					addPlayerToNativeChannel(channelId, ply)
+					setPlayerMutedInNativeChannel(channelId, ply, true)
+					state.members[ply] = true
+				end
+			end
+			for ply in pairs(state.members) do
+				if not nearby[ply] then
+					removePlayerFromNativeChannel(channelId, ply)
+					state.members[ply] = nil
+				end
+			end
+
+			::continue_call::
+		end
+
+		Wait(1000)
+		::continue::
+	end
+end)
+
 --- removes a player from the call for everyone in the call.
 ---@param source number the player to remove from the call
 ---@param callChannel number the call channel to remove them from
@@ -120,10 +223,13 @@ function removePlayerFromCall(source, callChannel)
 	end
 
 	if not next(callData[callChannel]) then
-		-- Llamada vacia -- limpiar tambien su check de autorizacion, no
-		-- dejarlo huerfano esperando a la siguiente llamada con este mismo
-		-- numero (independiente de si las llamadas nativas estan activas).
+		-- Llamada vacia -- limpiar tambien su check de autorizacion y su
+		-- altavoz (si tenia), no dejarlos huerfanos esperando a la
+		-- siguiente llamada con este mismo numero (independiente de si las
+		-- llamadas nativas estan activas -- clearCallSpeaker es un no-op
+		-- seguro si nunca hubo altavoz).
 		callChecks[callChannel] = nil
+		clearCallSpeaker(callChannel)
 	end
 end
 

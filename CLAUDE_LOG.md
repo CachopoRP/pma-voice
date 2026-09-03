@@ -1,5 +1,27 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-03 (3) — Altavoz real: gente cerca oye la llamada, silenciada · Claude
+
+**Contexto:** al revisar el mockup de Teléfono, dije que "Altavoz" era solo cosmético (audio 100%
+cliente, sin equivalente real). Oscar preguntó por qué no se podía hacer de verdad -- repensándolo,
+sí hay un equivalente real: que la gente cerca de quien activa el altavoz **oiga** la llamada
+(como sostener el móvil en alto delante de otros), sin poder **hablar** dentro de ella.
+
+**Por qué no vale un canal SPATIAL/TEMPORARY para esto:** su caída de audio por distancia la
+calcula el motor sobre la posición real de CADA miembro del canal -- el interlocutor remoto no
+está físicamente cerca de quien tiene el altavoz (podría estar al otro lado del mapa), así que
+meterlo en un canal SPATIAL lo silenciaría también para la persona que SÍ está en la llamada.
+
+**Hecho:** `setCallSpeaker(source, callChannel, enabled)` en `server/module/phone.lua`, exportado.
+Con el altavoz activo, un hilo (`CreateThread`, 1s de intervalo mientras haya algún altavoz
+activo) mide la distancia real entre quien tiene el altavoz y el resto de jugadores online
+(`SPEAKER_RADIUS = 6.0`), y añade/quita a los que entran o salen del radio al mismo canal
+NON_SPATIAL de la llamada -- silenciándolos con `setPlayerMutedInNativeChannel` en cuanto entran
+(oyen, no pueden hablar dentro). Limpieza automática si la llamada termina o si quien tenía el
+altavoz se desconecta (`GetPlayerPed` inválido).
+
+**Sin confirmar en vivo todavía.**
+
 ## 2026-09-03 (2) — Fase 2 de Teléfono: export `muteInCall` para silenciar · Claude
 
 **Pedido:** siguiendo el plan de fusión Teléfono+Contactos (ver `qbx_phone/CLAUDE_LOG.md`), Fase 2
