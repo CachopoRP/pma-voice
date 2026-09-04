@@ -1,5 +1,31 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-04 (2) — `vtest_d_radio`: los arneses A/B/C no probaban radio de verdad · Claude
+
+**Pedido por Oscar:** con las tres convars nativas ya activas en producción, probar radios en vivo
+(Fase 4, nunca confirmada) -- pidió usar los comandos de prueba existentes si servían, o crear uno
+si no.
+
+**Encontrado:** `vtest_a_nonspatial_solo`/`b`/`c` usan `createNativeChannel(NATIVE_VOICE_MODE.NON_SPATIAL, 0.0)`
+directamente -- **exactamente los mismos parámetros** que usa `radio.lua:getOrCreateNativeRadioChannel`
+para un canal de radio real. Es decir, `vtest_a` ya valida el primitivo nativo de radio a nivel
+mecánico, pero se salta TODA la lógica propia de `radio.lua` (`canJoinChannel`, `radioData`, y sobre
+todo el mute-por-defecto-hasta-PTT de `addPlayerToRadio` -- los canales de radio nativos silencian
+al jugador nada más entrar, solo se destapan mientras se mantiene pulsado el PTT). Ninguno de los
+tres arneses existentes prueba eso.
+
+**Hecho:** `vtest_d_radio <serverId2> [mas ids]` en `server/module/voice_native_test.lua` --
+llama a `setPlayerRadio(target, 999)` (frecuencia de prueba fija, para no chocar con radios reales
+en uso) tal cual lo hace el flujo real de producción (item de radio / `/radio`), no un canal
+sintético. Si `vtest_a` funciona pero `vtest_d_radio` no, el problema está en la lógica propia de
+`radio.lua`, no en el canal nativo en sí -- distingue mejor la causa que repetir el mismo escenario
+de A. Requiere mantener pulsado el PTT (`voice_defaultRadio`, `LMENU` en este server) para
+oírse -- avisa de esto en el propio print del comando.
+
+**Sin confirmar en vivo todavía.**
+
+---
+
 ## 2026-09-04 — Auditoría completa de natives Mumble restantes, cierra los últimos huecos sin condicionar · Claude
 
 **Pedido por Oscar:** "revisa en pma y en phone donde se usan nativas de mumble y vamos a acabar

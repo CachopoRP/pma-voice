@@ -134,6 +134,31 @@ RegisterCommand('vtest_c_spatial_solo', function(source, args)
 	print(('[vtest][C] Canal %s (TEMPORARY, 50m) listo. Control/referencia -- ya sabiamos que esto se oye.'):format(channelId))
 end, false)
 
+--- Escenario D: radio REAL, no un canal nativo sintetico como A/B/C -- llama
+--- a setPlayerRadio(source, radioChannel) tal cual lo hace el flujo real
+--- (item de radio / comando /radio), en una frecuencia de prueba fija para
+--- no interferir con radios reales en uso. A diferencia de A/B/C, esto SI
+--- pasa por toda la logica propia de radio.lua (canJoinChannel, radioData,
+--- y el mute-por-defecto-hasta-PTT de addPlayerToRadio) -- si A funciona
+--- pero D no, el problema esta en radio.lua, no en el canal nativo en si.
+--- Hace falta voice_useNativeRadio activa Y que cada jugador mantenga
+--- pulsado su tecla de PTT de radio (voice_defaultRadio, LMENU por
+--- defecto) para poder oírse -- se silencian solos al entrar.
+RegisterCommand('vtest_d_radio', function(source, args)
+	local targets = resolveTargets(source, args)
+	if #targets < 2 then
+		print('[vtest] Uso: /vtest_d_radio <serverId2> [mas ids]')
+		return
+	end
+
+	local TEST_FREQ = 999
+	for _, t in ipairs(targets) do
+		setPlayerRadio(t, TEST_FREQ)
+	end
+	print(('[vtest][D] %s jugador(es) puestos en la frecuencia de prueba %s via setPlayerRadio real.'):format(#targets, TEST_FREQ))
+	print('[vtest][D] Mantened pulsada la tecla de PTT de radio (voice_defaultRadio) para hablar -- se silencian solos hasta que la pulsais.')
+end, false)
+
 RegisterCommand('vtest_mute', function(source, args)
 	local channelId = tonumber(args[1])
 	local target = tonumber(args[2])
