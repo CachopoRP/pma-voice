@@ -1,3 +1,7 @@
+> **⚠️ Versión viva movida.** Este contenido se copió a `ops-docs/projects/proyecto-voz.md`
+> (repo `CachopoRP/ops-docs`) el 2026-09-04 — ediciones futuras van ahí, no aquí. Este archivo se
+> deja como referencia histórica, puede quedar desactualizado.
+
 # 🎙️ Proyecto Voz — pma-voice nativo para Enhanced
 
 > Documento de proyecto de la migración de `pma-voice` de las natives de Mumble (deprecadas,
