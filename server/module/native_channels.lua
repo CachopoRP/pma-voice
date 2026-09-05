@@ -156,6 +156,25 @@ end
 
 exports('isPlayerAdminMuted', isPlayerAdminMuted)
 
+-- CachopoRP 2026-09-06: puerta de entrada de red para el boton de mute
+-- "personal" antiguo (`toggleMutePlayer`, client/init/main.lua -- qbx_adminmenu
+-- y mm_radio lo llaman), redirigido a este mute global tras comprobar que su
+-- base (MumbleSetVolumeOverrideByServerId) ya no hacia nada con sv_mumble
+-- apagado. MISMO ACE que ya protege /muteply (server/mute.js,
+-- command.muteply) -- sin esta comprobacion, cualquier cliente podria
+-- silenciar a cualquiera para todo el mundo con un simple TriggerServerEvent,
+-- sin pasar por ningun menu de admin real.
+RegisterNetEvent('pma-voice:server:setPlayerAdminMuted', function(target, muted)
+	local src = source
+	if not IsPlayerAceAllowed(src, 'command.muteply') then
+		logger.warn('[native_channels] %s intento usar setPlayerAdminMuted sobre %s sin el ace command.muteply',
+			src, tostring(target))
+		return
+	end
+	if type(target) ~= 'number' then return end
+	setPlayerAdminMuted(target, muted and true or false)
+end)
+
 -- Modo espectador (2026-09-05) -- equivalente nativo de
 -- MumbleAddVoiceChannelListen, documentado en VOZ.md: unir al oyente a los
 -- canales del objetivo pero SIEMPRE silenciado (oye, no puede hablar en

@@ -1,5 +1,37 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-06 (2) — Cierra los ultimos Mumble* sueltos tras apagar sv_mumble · Claude
+
+**Contexto:** Oscar, tras investigar un reporte de "caidas" en `src-payphone` (sin causa real
+encontrada -- ver ese mismo dia en el historial de conversacion, no hay entrada de CLAUDE_LOG
+propia de `src-payphone` para esto): "lo que no entiendo es que está tirando de nativas de mumble
+cuando nos las hemos ido cargando todas". Repasados los 3 hallazgos del agente de investigacion:
+
+1. `client/init/proximity.lua:55` (`MumbleClearVoiceTargetChannels`) -- **falsa alarma**, ya
+   estaba bien condicionada; con las 3 convars nativas activas en produccion no se ejecuta. No
+   tocado.
+2. `client/init/main.lua` (poll de reconexion a un servidor Mumble EXTERNO,
+   `MumbleSetServerAddress`) -- solo relevante para `voice_external_host` (no es nuestro caso,
+   usamos `voice_internal`, ver VOZ.md). Con `sv_mumble` apagado ya no hacia nada real, pero
+   sondeaba convars cada 500ms en balde el 100% del tiempo de juego -- todo el hilo ahora se salta
+   por completo si `sv_mumble` no esta activo.
+3. **`toggleMutePlayer` (mute PERSONAL -- boton "silenciar solo para mi" de `qbx_adminmenu` y
+   `mm_radio`) -- problema real, no cosmetico.** Usaba `MumbleSetVolumeOverrideByServerId`, sin
+   equivalente nativo (mismo motivo que la estatica de radio descartada el 2026-09-05). Con
+   `sv_mumble` apagado, el boton ya no hacia NADA de verdad -- el jugador seguia oyendose igual
+   para todos, pero la UI hacia como si hubiera funcionado. **Decision de Oscar: redirigir al mute
+   GLOBAL de moderacion** (`setPlayerAdminMuted`, el mismo que usa `/muteply`) -- cambia la
+   semantica de "solo para mi" a "silenciado para todos". Nuevo evento de servidor
+   `pma-voice:server:setPlayerAdminMuted` (`native_channels.lua`) protegido con el MISMO ace que ya
+   usa `/muteply` (`command.muteply`, via `IsPlayerAceAllowed`) -- sin esa comprobacion, cualquier
+   cliente podria silenciar a cualquiera para todo el mundo con un simple `TriggerServerEvent`, sin
+   pasar por ningun menu de admin real.
+
+**Sin confirmar en vivo todavia** -- ni el mute redirigido, ni (siguen pendientes de antes) el mute
+de admin persistente ni el modo espectador.
+
+---
+
 ## 2026-09-06 — Arnes de pruebas movido a rpbase-tests (recurso dedicado, on-demand) · Claude
 
 `server/module/voice_native_test.lua` retirado -- su propio comentario ya decia "BORRAR ESTE
