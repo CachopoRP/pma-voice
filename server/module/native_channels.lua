@@ -11,6 +11,7 @@
 -- mientras esten en 0.
 
 nativeChannels = nativeChannels or {} -- [channelId] = { mode, maxDistance, members = {[source]=true} }
+adminMutedPlayers = adminMutedPlayers or {} -- [source] = true -- ver setPlayerAdminMuted
 
 --- Modos de CreateVoiceChannel (docs.fivem.net/docs/scripting-manual/voice/).
 NATIVE_VOICE_MODE = {
@@ -53,6 +54,14 @@ function addPlayerToNativeChannel(channelId, source)
 		return false
 	end
 	nativeChannels[channelId].members[source] = true
+	-- Mute de admin (ver setPlayerAdminMuted mas abajo) -- si a este jugador
+	-- se le silencio de forma persistente, hay que re-aplicar el mute cada
+	-- vez que entra en un canal nuevo (cambia de tramo de proximidad, entra
+	-- en un radio, recibe una llamada...), si no el mute se "olvidaria" al
+	-- primer cambio de canal.
+	if adminMutedPlayers[source] then
+		pcall(SetPlayerMutedInVoiceChannel, channelId, source, true)
+	end
 	return true
 end
 
@@ -119,6 +128,72 @@ function getNativeChannelsForPlayer(source)
 end
 
 exports('getNativeChannelsForPlayer', getNativeChannelsForPlayer)
+
+-- Mute de admin (2026-09-05) -- decision de Oscar: moderacion completa de
+-- verdad, no personal (el jugador no puede hablar en NINGUN canal, para
+-- NADIE, no solo "yo no le oigo"). No existe una native de mute global
+-- independiente de canal en la API nueva (a diferencia de la vieja
+-- MumbleSetPlayerMuted) -- se simula silenciando al jugador en TODOS los
+-- canales nativos en los que este ahora mismo, y reforzando el mute cada vez
+-- que entra en uno nuevo (ver el hook en addPlayerToNativeChannel arriba).
+---@param source number
+---@param muted boolean
+function setPlayerAdminMuted(source, muted)
+	adminMutedPlayers[source] = muted or nil
+	for _, channelId in ipairs(getNativeChannelsForPlayer(source)) do
+		setPlayerMutedInNativeChannel(channelId, source, muted)
+	end
+	logger.info('[native_channels] %s -> mute de admin: %s', source, muted)
+end
+
+exports('setPlayerAdminMuted', setPlayerAdminMuted)
+
+---@param source number
+---@return boolean
+function isPlayerAdminMuted(source)
+	return adminMutedPlayers[source] == true
+end
+
+exports('isPlayerAdminMuted', isPlayerAdminMuted)
+
+-- Modo espectador (2026-09-05) -- equivalente nativo de
+-- MumbleAddVoiceChannelListen, documentado en VOZ.md: unir al oyente a los
+-- canales del objetivo pero SIEMPRE silenciado (oye, no puede hablar en
+-- ellos). A diferencia de un miembro normal, esto no representa una
+-- transmision propia del oyente -- solo escucha lo que ya se transmite ahi.
+-- MISMA limitacion de seguridad que ya tenia el MumbleAddVoiceChannelListen
+-- original: quien dispara esto es el CLIENTE (ver client/init/proximity.lua),
+-- sin validacion server-side de que de verdad este en modo espectador -- no
+-- es una regresion nueva, el native viejo tenia exactamente el mismo hueco.
+---@param listenerSource number
+---@param targetSource number
+function addNativeChannelListener(listenerSource, targetSource)
+	for _, channelId in ipairs(getNativeChannelsForPlayer(targetSource)) do
+		if addPlayerToNativeChannel(channelId, listenerSource) then
+			setPlayerMutedInNativeChannel(channelId, listenerSource, true)
+		end
+	end
+end
+
+exports('addNativeChannelListener', addNativeChannelListener)
+
+---@param listenerSource number
+---@param targetSource number
+function removeNativeChannelListener(listenerSource, targetSource)
+	for _, channelId in ipairs(getNativeChannelsForPlayer(targetSource)) do
+		removePlayerFromNativeChannel(channelId, listenerSource)
+	end
+end
+
+exports('removeNativeChannelListener', removeNativeChannelListener)
+
+RegisterNetEvent('pma-voice:server:addNativeChannelListener', function(targetSource)
+	addNativeChannelListener(source, targetSource)
+end)
+
+RegisterNetEvent('pma-voice:server:removeNativeChannelListener', function(targetSource)
+	removeNativeChannelListener(source, targetSource)
+end)
 
 -- Limpieza al desconectar -- independiente del cleanup de radio/llamada de
 -- Mumble que sigue en server/main.lua sin tocar en esta fase.

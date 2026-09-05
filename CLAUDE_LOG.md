@@ -1,5 +1,46 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-05 (2) — Migra mute de admin (moderacion global) y modo espectador a natives · Claude
+
+Cierra los ultimos 2 huecos de Proyecto Voz. Decisiones de Oscar: mute de admin pasa a moderacion
+COMPLETA (el jugador no puede hablar para nadie, no solo "el admin no le oye"); espectador usa
+`AddPlayerToVoiceChannel` + `SetPlayerMutedInVoiceChannel(true)`, confirmado con la native real via
+MCP fivem-enhanced.
+
+**Mute de admin (`server/module/native_channels.lua`):** no existe una native de mute GLOBAL
+independiente de canal en la API nueva (a diferencia de `MumbleSetPlayerMuted`, que sigue existiendo
+pero solo afecta a Mumble). Simulado con `setPlayerAdminMuted(source, muted)` -- silencia al jugador
+en TODOS los canales nativos en los que este ahora mismo (`getNativeChannelsForPlayer`), y
+`addPlayerToNativeChannel` se ha modificado para RE-APLICAR el mute cada vez que entra en un canal
+nuevo (cambia de tramo de proximidad, entra en un radio, recibe una llamada) -- sin esto el mute se
+"olvidaria" en el primer cambio de canal. `server/mute.js` (`/muteply`, JS por la falta de
+`ClearTimeout` en Lua) llama al nuevo export ademas de a `MumbleSetPlayerMuted` -- cubre al jugador
+este en el transporte que este (Mumble o nativo), sin tener que saber cual usa.
+
+**Modo espectador (`addNativeChannelListener`/`removeNativeChannelListener`, mismo archivo +
+`client/init/proximity.lua`):** equivalente documentado en VOZ.md de `MumbleAddVoiceChannelListen`
+-- unir al oyente a los canales del objetivo pero siempre silenciado en ellos (oye, no puede
+hablar). `client/init/proximity.lua` (`addChannelListener`/`removeChannelListener`) ahora dispara
+`TriggerServerEvent('pma-voice:server:addNativeChannelListener'/'removeNativeChannelListener', ...)`
+sin condicion cuando cualquiera de las 3 convars nativas esta activa, ademas de seguir llamando a
+los natives de Mumble tal cual (mezcla de transportes segun que fases esten encendidas).
+
+**Aviso de seguridad heredado, no nuevo:** quien dispara el listener es el CLIENTE, sin validacion
+server-side de que de verdad este en modo espectador -- exactamente el mismo hueco que ya tenia
+`MumbleAddVoiceChannelListen` original (tambien 100% client-side). No es una regresion de esta
+migracion, no se ha intentado cerrar (fuera de alcance de lo pedido).
+
+**Sin confirmar en vivo todavia** -- ambas piezas nuevas, sin arnes de prueba dedicado (a diferencia
+de `vtest_d_radio` para radios). Probar con 2 jugadores: `/muteply <id>` y confirmar que NADIE oye
+al muteado (no solo el admin); entrar en modo espectador/camara libre y confirmar que se oye
+proximidad/radio de quien se esta espectando.
+
+**Estado de "cepillar Mumble" tras esto:** los 5 huecos originales de VOZ.md quedan resueltos
+(3 migrados, 1 rediseñado/simulado con lo disponible, 1 descartado a proposito). Pendiente real:
+confirmar estas 2 ultimas piezas en vivo antes de plantear apagar `sv_mumble` del todo.
+
+---
+
 ## 2026-09-05 — Decision: estatica de radio/llamada DESCARTADA (no migrada, quitada aposta) · Claude
 
 **Contexto:** revisando que quedaba para poder apagar `sv_mumble` del todo (Oscar: "que queda por

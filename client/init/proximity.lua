@@ -120,7 +120,23 @@ function addNearbyPlayers()
 	end
 end
 
+-- Modo espectador nativo (2026-09-05) -- equivalente de
+-- MumbleAddVoiceChannelListen documentado en VOZ.md (unirse a los canales
+-- del objetivo pero silenciado). Disparado siempre que CUALQUIER transporte
+-- nativo este activo -- el jugador puede estar mezclando canales nativos
+-- (radio) y Mumble (proximidad) a la vez segun que fases esten encendidas,
+-- asi que se intenta el lado nativo sin condicion; el servidor simplemente
+-- no encuentra canales que escuchar si el objetivo no esta en ninguno.
+local function isAnyNativeVoiceActive()
+	return GetConvarInt('voice_useNativeProximity', 0) == 1
+		or GetConvarInt('voice_useNativeRadio', 0) == 1
+		or GetConvarInt('voice_useNativeCalls', 0) == 1
+end
+
 function addChannelListener(serverId)
+	if isAnyNativeVoiceActive() then
+		TriggerServerEvent('pma-voice:server:addNativeChannelListener', serverId)
+	end
 	-- not in the documentation, but this will return -1 whenever the client isn't in a channel
 	local channel = MumbleGetVoiceChannelFromServerId(serverId)
 	if channel ~= -1 then
@@ -137,6 +153,9 @@ function removeChannelListener(serverId)
 			MumbleRemoveVoiceChannelListen(channel)
 		end
 		logger.verbose("Removing %s from listen table", serverId)
+	end
+	if isAnyNativeVoiceActive() then
+		TriggerServerEvent('pma-voice:server:removeNativeChannelListener', serverId)
 	end
 	-- remove the listener if they exist
 	listeners[serverId] = nil
