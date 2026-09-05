@@ -1,5 +1,37 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-05 — Decision: estatica de radio/llamada DESCARTADA (no migrada, quitada aposta) · Claude
+
+**Contexto:** revisando que quedaba para poder apagar `sv_mumble` del todo (Oscar: "que queda por
+adaptar, para cepillarme mumble"). El efecto de estatica (`toggleVoice` -> `MumbleSetSubmixForServerId`,
+via `client/init/main.lua`/`client/init/submix.lua`) era uno de los 3 huecos que quedaban sin
+native equivalente (junto a mute de admin y modo espectador).
+
+**Investigado con las natives reales (MCP fivem-enhanced, no solo VOZ.md):** `SetAudioSubmixEffectRadioFx`/
+`CreateAudioSubmix` son natives genericas de audio de GTA, sin ninguna relacion con los canales de
+voz nuevos. `MumbleSetSubmixForServerId` es explicitamente "Mumble Native Audio" según su propia
+declaracion oficial -- el motor de voz nuevo no expone su pipeline de audio al sistema de submix en
+absoluto, ni por canal ni por oyente. No hay forma de portarlo tal cual.
+
+**Decision de Oscar: quitarla, dejar la radio como audio no-espacial plano** (sin estatica). Buena
+noticia encontrada de paso: el efecto **ya estaba muerto de facto** en produccion -- `toggleVoice`
+(el unico sitio que aplica el submix) ya se salta entero tanto para radio (`voice_useNativeRadio`)
+como para llamadas (`voice_useNativeCalls`) cuando el modo nativo esta activo (fix ya hecho
+2026-09-02), y ambas convars estan activas en produccion desde el commit `74b20f4` de
+`FiveM-Enhanced`. O sea, nadie oia estatica ya -- esto solo lo hace explicito/permanente en vez de
+un efecto colateral de que el modo nativo este encendido.
+
+**Hecho:** `voice_enableSubmix 0` en el `server.cfg` de produccion (convar dedicado que ya existia
+para esto, ver `README.md`/`fxmanifest.lua`) -- cierra el hueco de raiz sin tocar codigo ni arriesgar
+nada (ya era inerte). El codigo de `submix.lua`/`toggleVoice`/`registerCustomSubmix` se deja tal
+cual (generico, tambien lo usarian `call`/otros efectos si algun dia se reactivase Mumble a mano) --
+no hace falta borrarlo para que la decision sea efectiva.
+
+**Estado de "cepillar Mumble" tras esto:** quedan 2 huecos reales sin native equivalente
+confirmado -- mute de admin (`toggleMutePlayer`, decision pendiente sobre si pasa a mute global vs
+seguir en Mumble) y modo espectador (sin investigar todavia). Mientras cualquiera de los dos siga en
+Mumble, `sv_mumble true` no se puede apagar del todo.
+
 ## 2026-09-04 (2) — `vtest_d_radio`: los arneses A/B/C no probaban radio de verdad · Claude
 
 **Pedido por Oscar:** con las tres convars nativas ya activas en producción, probar radios en vivo
