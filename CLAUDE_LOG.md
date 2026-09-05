@@ -1,5 +1,16 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-06 — Arnes de pruebas movido a rpbase-tests (recurso dedicado, on-demand) · Claude
+
+`server/module/voice_native_test.lua` retirado -- su propio comentario ya decia "BORRAR ESTE
+ARCHIVO cuando se termine de diagnosticar". Portado (con los cambios necesarios: llamadas directas
+a globales -> `exports['pma-voice']`) al nuevo recurso `rpbase-tests`
+(`server/voice_tests.lua`), que se arranca a mano desde txAdmin en vez de cargar siempre en
+produccion. Ver `rpbase-tests/CLAUDE_LOG.md` para el detalle completo del port y los 2 arneses
+nuevos (mute de admin, modo espectador) añadidos de paso.
+
+---
+
 ## 2026-09-05 (2) — Migra mute de admin (moderacion global) y modo espectador a natives · Claude
 
 Cierra los ultimos 2 huecos de Proyecto Voz. Decisiones de Oscar: mute de admin pasa a moderacion
