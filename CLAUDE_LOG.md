@@ -1,5 +1,45 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-07 — Aviso de nativas Mumble deprecadas: hueco conocido, sin native equivalente · Claude
+
+**Reportado por Oscar:** "sigo recibiendo avisos de nativas de mumble, algo habrá por ahí
+colgando?" — investigado a fondo antes de tocar nada, dado que las entradas anteriores (2026-09-04
+"Auditoría completa..." y 2026-09-06 (2) "Cierra los últimos Mumble* sueltos") ya habían cerrado
+uno por uno todos los huecos condicionables.
+
+**Confirmado: no hay ningún recurso duplicado ni huérfano.** Búsqueda de `Mumble[A-Z]\w*\(` en todo
+el catálogo — solo aparece dentro de `pma-voice`, en sus propios archivos ya auditados. El aviso
+genérico de FXServer ("The Mumble native functions are deprecated...") lo sigue disparando **una
+pieza concreta y conocida, no una nueva**:
+
+`client/init/proximity.lua` (bucle del indicador de "quién está hablando", el icono del micro),
+líneas ~228/233:
+```lua
+while not MumbleIsConnected() or not isInitialized do
+    Wait(100)
+end
+...
+local curTalkingStatus = MumbleIsPlayerTalking(PlayerId()) == 1
+```
+
+Corre **sin condicionar a ninguna convar nativa**, cada ~100ms, indefinidamente, mientras el
+jugador está conectado — a diferencia de proximidad/radio/llamadas (esas sí 100% nativas en
+producción desde las fases 2-4 de `VOZ.md`). No es un descuido: **la API de voz nueva de Enhanced
+no expone ninguna nativa equivalente para "¿está hablando este jugador ahora mismo?"** — mismo tipo
+de hueco ya documentado y aceptado para otras piezas sin equivalente real (estática de radio,
+2026-09-05; mute personal redirigido a mute global, 2026-09-06 (2)).
+
+**Decisión: no se toca.** El único "equivalente" real sería inferir el habla desde el propio motor
+de audio del cliente (sin API expuesta para eso tampoco) o aceptar que el indicador visual siga
+dependiendo de la capa de compatibilidad Mumble mientras exista. El aviso es inofensivo — no
+afecta a proximidad, radios ni llamadas, todas ya nativas. Si Cfx.re llega a quitar la capa de
+compatibilidad del todo en el futuro (la propia advertencia dice "removed in a future update"),
+esto es lo primero que dejaría de funcionar (el icono de "hablando" dejaría de actualizarse, nada
+más grave) — **queda anotado aquí a propósito para no volver a investigarlo desde cero** la próxima
+vez que salga el mismo aviso.
+
+---
+
 ## 2026-09-06 (2) — Cierra los ultimos Mumble* sueltos tras apagar sv_mumble · Claude
 
 **Contexto:** Oscar, tras investigar un reporte de "caidas" en `src-payphone` (sin causa real
