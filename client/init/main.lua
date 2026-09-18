@@ -129,7 +129,16 @@ exports("setEffectSubmix", function(type, effectId)
 end)
 
 function restoreDefaultSubmix(plyServerId)
-	local submix = Player(plyServerId).state.submix
+	-- CachopoRP: Player(plyServerId) devuelve nil si ese id ya no corresponde a un jugador
+	-- conectado -- esto se llama 250ms DESPUES de colgar/callar (SetTimeout mas abajo), tiempo
+	-- de sobra para que el otro jugador se haya desconectado de verdad si la desconexion
+	-- coincidio con el final de la llamada. Sin este guard, ".state" sobre nil rompia el script
+	-- (y sospechoso de contribuir al crash real reportado en vivo al colgar una llamada --
+	-- ver CLAUDE_LOG.md).
+	local target = Player(plyServerId)
+	if not target then return end
+
+	local submix = target.state.submix
 	local submixEffect = submixIndicies[submix]
 	if not submix or not submixEffect then
 		MumbleSetSubmixForServerId(plyServerId, -1)
@@ -147,6 +156,12 @@ local disableSubmixReset = {}
 ---@param moduleType string the volume & submix to use for the voice.
 function toggleVoice(plySource, enabled, moduleType)
 	if mutedPlayers[plySource] then return end
+	-- CachopoRP: guard real -- si plySource ya no es un jugador conectado (desconexion
+	-- coincidiendo con colgar/callar), los natives de Mumble de mas abajo
+	-- (MumbleSetVolumeOverrideByServerId/MumbleSetSubmixForServerId) se llamaban igual con un
+	-- serverId obsoleto. Sospechoso de contribuir al crash real reportado en vivo al colgar
+	-- una llamada -- ver CLAUDE_LOG.md.
+	if GetPlayerFromServerId(plySource) == -1 then return end
 	logger.verbose('[main] Updating %s to talking: %s with submix %s', plySource, enabled, moduleType)
 	local distance = currentTargets[plySource]
 	if enabled and (not distance or distance > 4.0) then

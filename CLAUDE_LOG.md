@@ -1,5 +1,42 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-18 — Fix real (sospecha fundada): crash al colgar una llamada
+
+**Reportado por Oscar** (en vivo): el juego crasheo justo cuando otro jugador ("Jose") colgo
+una llamada de telefono. Analizado el `.dmp` mas reciente con RSCoroner
+(`analyze-crash.ps1 -Full`): `INVALID_POINTER_READ` (`c0000005`), `rax=0`, lee
+`[rax+0x20]` -- un null pointer dereference real dentro del motor (`GTA5_Enhanced.exe`), sin
+simbolos de Lua/JS en la pila (crash nativo puro, no un error de script atrapable).
+
+**Investigacion:** colgar dispara `z-phone:client:closeCall`/`closeCallSelf`
+(`qbx_phone/client/feature/notification.lua`) -> `exports['pma-voice']:removePlayerFromCall(...)`
+-> `pma-voice/client/module/phone.lua` -> `toggleVoice(tgt, false, 'call')` para el resto de
+participantes -> `client/init/main.lua`. Dos sitios ahi llamaban a natives de Mumble
+(`MumbleSetVolumeOverrideByServerId`/`MumbleSetSubmixForServerId`) o a `Player(plyServerId).state`
+**sin comprobar si ese `serverId` seguia siendo un jugador conectado**:
+
+- `restoreDefaultSubmix`: se llama 250ms DESPUES de colgar (via `SetTimeout`) -- tiempo de sobra
+  para que el otro jugador se desconecte de verdad si la desconexion coincidio con el final de
+  la llamada. `Player(plyServerId)` devuelve `nil` en ese caso -- `.state` sobre `nil` rompia el
+  script Lua (no crashea el motor por si solo), pero es la misma condicion de carrera que
+  alimenta el siguiente punto.
+- `toggleVoice`: llamaba a los natives de Mumble con `plySource` sin verificar que siguiera
+  conectado. Natives de Mumble con un `serverId` obsoleto/ya invalido en el momento exacto de
+  una desconexion son un candidato real y conocido para crashes nativos tipo
+  `INVALID_POINTER_READ` en FXServer -- coincide con el patron exacto del crash reportado
+  (colgar + posible desconexion casi simultanea del otro jugador).
+
+**No se puede confirmar al 100%** que esta sea LA causa exacta sin simbolos nativos en el dump
+(el crash no tiene ninguna referencia a Lua/recurso en la pila) -- pero es el punto mas plausible
+de todo el flujo de colgar, y el fix es correcto independientemente de si era la causa exacta
+(nunca se debe tocar el audio de un jugador que ya no esta conectado).
+
+**Fix:** guard `GetPlayerFromServerId(plySource) == -1` al principio de `toggleVoice` (sale sin
+tocar ningun native de Mumble si el jugador ya no esta conectado) + guard `not Player(plyServerId)`
+en `restoreDefaultSubmix`. `client/init/main.lua`.
+
+---
+
 ## 2026-09-07 — Aviso de nativas Mumble deprecadas: hueco conocido, sin native equivalente · Claude
 
 **Reportado por Oscar:** "sigo recibiendo avisos de nativas de mumble, algo habrá por ahí
