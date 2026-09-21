@@ -1,5 +1,224 @@
 # CLAUDE_LOG — pma-voice
 
+## 2026-09-18 — Fix real (sospecha fundada): crash al colgar una llamada
+
+**Reportado por Oscar** (en vivo): el juego crasheo justo cuando otro jugador ("Jose") colgo
+una llamada de telefono. Analizado el `.dmp` mas reciente con RSCoroner
+(`analyze-crash.ps1 -Full`): `INVALID_POINTER_READ` (`c0000005`), `rax=0`, lee
+`[rax+0x20]` -- un null pointer dereference real dentro del motor (`GTA5_Enhanced.exe`), sin
+simbolos de Lua/JS en la pila (crash nativo puro, no un error de script atrapable).
+
+**Investigacion:** colgar dispara `z-phone:client:closeCall`/`closeCallSelf`
+(`qbx_phone/client/feature/notification.lua`) -> `exports['pma-voice']:removePlayerFromCall(...)`
+-> `pma-voice/client/module/phone.lua` -> `toggleVoice(tgt, false, 'call')` para el resto de
+participantes -> `client/init/main.lua`. Dos sitios ahi llamaban a natives de Mumble
+(`MumbleSetVolumeOverrideByServerId`/`MumbleSetSubmixForServerId`) o a `Player(plyServerId).state`
+**sin comprobar si ese `serverId` seguia siendo un jugador conectado**:
+
+- `restoreDefaultSubmix`: se llama 250ms DESPUES de colgar (via `SetTimeout`) -- tiempo de sobra
+  para que el otro jugador se desconecte de verdad si la desconexion coincidio con el final de
+  la llamada. `Player(plyServerId)` devuelve `nil` en ese caso -- `.state` sobre `nil` rompia el
+  script Lua (no crashea el motor por si solo), pero es la misma condicion de carrera que
+  alimenta el siguiente punto.
+- `toggleVoice`: llamaba a los natives de Mumble con `plySource` sin verificar que siguiera
+  conectado. Natives de Mumble con un `serverId` obsoleto/ya invalido en el momento exacto de
+  una desconexion son un candidato real y conocido para crashes nativos tipo
+  `INVALID_POINTER_READ` en FXServer -- coincide con el patron exacto del crash reportado
+  (colgar + posible desconexion casi simultanea del otro jugador).
+
+**No se puede confirmar al 100%** que esta sea LA causa exacta sin simbolos nativos en el dump
+(el crash no tiene ninguna referencia a Lua/recurso en la pila) -- pero es el punto mas plausible
+de todo el flujo de colgar, y el fix es correcto independientemente de si era la causa exacta
+(nunca se debe tocar el audio de un jugador que ya no esta conectado).
+
+**Fix:** guard `GetPlayerFromServerId(plySource) == -1` al principio de `toggleVoice` (sale sin
+tocar ningun native de Mumble si el jugador ya no esta conectado) + guard `not Player(plyServerId)`
+en `restoreDefaultSubmix`. `client/init/main.lua`.
+
+---
+
+## 2026-09-07 — Aviso de nativas Mumble deprecadas: hueco conocido, sin native equivalente · Claude
+
+**Reportado por Oscar:** "sigo recibiendo avisos de nativas de mumble, algo habrá por ahí
+colgando?" — investigado a fondo antes de tocar nada, dado que las entradas anteriores (2026-09-04
+"Auditoría completa..." y 2026-09-06 (2) "Cierra los últimos Mumble* sueltos") ya habían cerrado
+uno por uno todos los huecos condicionables.
+
+**Confirmado: no hay ningún recurso duplicado ni huérfano.** Búsqueda de `Mumble[A-Z]\w*\(` en todo
+el catálogo — solo aparece dentro de `pma-voice`, en sus propios archivos ya auditados. El aviso
+genérico de FXServer ("The Mumble native functions are deprecated...") lo sigue disparando **una
+pieza concreta y conocida, no una nueva**:
+
+`client/init/proximity.lua` (bucle del indicador de "quién está hablando", el icono del micro),
+líneas ~228/233:
+```lua
+while not MumbleIsConnected() or not isInitialized do
+    Wait(100)
+end
+...
+local curTalkingStatus = MumbleIsPlayerTalking(PlayerId()) == 1
+```
+
+Corre **sin condicionar a ninguna convar nativa**, cada ~100ms, indefinidamente, mientras el
+jugador está conectado — a diferencia de proximidad/radio/llamadas (esas sí 100% nativas en
+producción desde las fases 2-4 de `VOZ.md`). No es un descuido: **la API de voz nueva de Enhanced
+no expone ninguna nativa equivalente para "¿está hablando este jugador ahora mismo?"** — mismo tipo
+de hueco ya documentado y aceptado para otras piezas sin equivalente real (estática de radio,
+2026-09-05; mute personal redirigido a mute global, 2026-09-06 (2)).
+
+**Decisión: no se toca.** El único "equivalente" real sería inferir el habla desde el propio motor
+de audio del cliente (sin API expuesta para eso tampoco) o aceptar que el indicador visual siga
+dependiendo de la capa de compatibilidad Mumble mientras exista. El aviso es inofensivo — no
+afecta a proximidad, radios ni llamadas, todas ya nativas. Si Cfx.re llega a quitar la capa de
+compatibilidad del todo en el futuro (la propia advertencia dice "removed in a future update"),
+esto es lo primero que dejaría de funcionar (el icono de "hablando" dejaría de actualizarse, nada
+más grave) — **queda anotado aquí a propósito para no volver a investigarlo desde cero** la próxima
+vez que salga el mismo aviso.
+
+---
+
+## 2026-09-06 (2) — Cierra los ultimos Mumble* sueltos tras apagar sv_mumble · Claude
+
+**Contexto:** Oscar, tras investigar un reporte de "caidas" en `src-payphone` (sin causa real
+encontrada -- ver ese mismo dia en el historial de conversacion, no hay entrada de CLAUDE_LOG
+propia de `src-payphone` para esto): "lo que no entiendo es que está tirando de nativas de mumble
+cuando nos las hemos ido cargando todas". Repasados los 3 hallazgos del agente de investigacion:
+
+1. `client/init/proximity.lua:55` (`MumbleClearVoiceTargetChannels`) -- **falsa alarma**, ya
+   estaba bien condicionada; con las 3 convars nativas activas en produccion no se ejecuta. No
+   tocado.
+2. `client/init/main.lua` (poll de reconexion a un servidor Mumble EXTERNO,
+   `MumbleSetServerAddress`) -- solo relevante para `voice_external_host` (no es nuestro caso,
+   usamos `voice_internal`, ver VOZ.md). Con `sv_mumble` apagado ya no hacia nada real, pero
+   sondeaba convars cada 500ms en balde el 100% del tiempo de juego -- todo el hilo ahora se salta
+   por completo si `sv_mumble` no esta activo.
+3. **`toggleMutePlayer` (mute PERSONAL -- boton "silenciar solo para mi" de `qbx_adminmenu` y
+   `mm_radio`) -- problema real, no cosmetico.** Usaba `MumbleSetVolumeOverrideByServerId`, sin
+   equivalente nativo (mismo motivo que la estatica de radio descartada el 2026-09-05). Con
+   `sv_mumble` apagado, el boton ya no hacia NADA de verdad -- el jugador seguia oyendose igual
+   para todos, pero la UI hacia como si hubiera funcionado. **Decision de Oscar: redirigir al mute
+   GLOBAL de moderacion** (`setPlayerAdminMuted`, el mismo que usa `/muteply`) -- cambia la
+   semantica de "solo para mi" a "silenciado para todos". Nuevo evento de servidor
+   `pma-voice:server:setPlayerAdminMuted` (`native_channels.lua`) protegido con el MISMO ace que ya
+   usa `/muteply` (`command.muteply`, via `IsPlayerAceAllowed`) -- sin esa comprobacion, cualquier
+   cliente podria silenciar a cualquiera para todo el mundo con un simple `TriggerServerEvent`, sin
+   pasar por ningun menu de admin real.
+
+**Sin confirmar en vivo todavia** -- ni el mute redirigido, ni (siguen pendientes de antes) el mute
+de admin persistente ni el modo espectador.
+
+---
+
+## 2026-09-06 — Arnes de pruebas movido a rpbase-tests (recurso dedicado, on-demand) · Claude
+
+`server/module/voice_native_test.lua` retirado -- su propio comentario ya decia "BORRAR ESTE
+ARCHIVO cuando se termine de diagnosticar". Portado (con los cambios necesarios: llamadas directas
+a globales -> `exports['pma-voice']`) al nuevo recurso `rpbase-tests`
+(`server/voice_tests.lua`), que se arranca a mano desde txAdmin en vez de cargar siempre en
+produccion. Ver `rpbase-tests/CLAUDE_LOG.md` para el detalle completo del port y los 2 arneses
+nuevos (mute de admin, modo espectador) añadidos de paso.
+
+---
+
+## 2026-09-05 (2) — Migra mute de admin (moderacion global) y modo espectador a natives · Claude
+
+Cierra los ultimos 2 huecos de Proyecto Voz. Decisiones de Oscar: mute de admin pasa a moderacion
+COMPLETA (el jugador no puede hablar para nadie, no solo "el admin no le oye"); espectador usa
+`AddPlayerToVoiceChannel` + `SetPlayerMutedInVoiceChannel(true)`, confirmado con la native real via
+MCP fivem-enhanced.
+
+**Mute de admin (`server/module/native_channels.lua`):** no existe una native de mute GLOBAL
+independiente de canal en la API nueva (a diferencia de `MumbleSetPlayerMuted`, que sigue existiendo
+pero solo afecta a Mumble). Simulado con `setPlayerAdminMuted(source, muted)` -- silencia al jugador
+en TODOS los canales nativos en los que este ahora mismo (`getNativeChannelsForPlayer`), y
+`addPlayerToNativeChannel` se ha modificado para RE-APLICAR el mute cada vez que entra en un canal
+nuevo (cambia de tramo de proximidad, entra en un radio, recibe una llamada) -- sin esto el mute se
+"olvidaria" en el primer cambio de canal. `server/mute.js` (`/muteply`, JS por la falta de
+`ClearTimeout` en Lua) llama al nuevo export ademas de a `MumbleSetPlayerMuted` -- cubre al jugador
+este en el transporte que este (Mumble o nativo), sin tener que saber cual usa.
+
+**Modo espectador (`addNativeChannelListener`/`removeNativeChannelListener`, mismo archivo +
+`client/init/proximity.lua`):** equivalente documentado en VOZ.md de `MumbleAddVoiceChannelListen`
+-- unir al oyente a los canales del objetivo pero siempre silenciado en ellos (oye, no puede
+hablar). `client/init/proximity.lua` (`addChannelListener`/`removeChannelListener`) ahora dispara
+`TriggerServerEvent('pma-voice:server:addNativeChannelListener'/'removeNativeChannelListener', ...)`
+sin condicion cuando cualquiera de las 3 convars nativas esta activa, ademas de seguir llamando a
+los natives de Mumble tal cual (mezcla de transportes segun que fases esten encendidas).
+
+**Aviso de seguridad heredado, no nuevo:** quien dispara el listener es el CLIENTE, sin validacion
+server-side de que de verdad este en modo espectador -- exactamente el mismo hueco que ya tenia
+`MumbleAddVoiceChannelListen` original (tambien 100% client-side). No es una regresion de esta
+migracion, no se ha intentado cerrar (fuera de alcance de lo pedido).
+
+**Sin confirmar en vivo todavia** -- ambas piezas nuevas, sin arnes de prueba dedicado (a diferencia
+de `vtest_d_radio` para radios). Probar con 2 jugadores: `/muteply <id>` y confirmar que NADIE oye
+al muteado (no solo el admin); entrar en modo espectador/camara libre y confirmar que se oye
+proximidad/radio de quien se esta espectando.
+
+**Estado de "cepillar Mumble" tras esto:** los 5 huecos originales de VOZ.md quedan resueltos
+(3 migrados, 1 rediseñado/simulado con lo disponible, 1 descartado a proposito). Pendiente real:
+confirmar estas 2 ultimas piezas en vivo antes de plantear apagar `sv_mumble` del todo.
+
+---
+
+## 2026-09-05 — Decision: estatica de radio/llamada DESCARTADA (no migrada, quitada aposta) · Claude
+
+**Contexto:** revisando que quedaba para poder apagar `sv_mumble` del todo (Oscar: "que queda por
+adaptar, para cepillarme mumble"). El efecto de estatica (`toggleVoice` -> `MumbleSetSubmixForServerId`,
+via `client/init/main.lua`/`client/init/submix.lua`) era uno de los 3 huecos que quedaban sin
+native equivalente (junto a mute de admin y modo espectador).
+
+**Investigado con las natives reales (MCP fivem-enhanced, no solo VOZ.md):** `SetAudioSubmixEffectRadioFx`/
+`CreateAudioSubmix` son natives genericas de audio de GTA, sin ninguna relacion con los canales de
+voz nuevos. `MumbleSetSubmixForServerId` es explicitamente "Mumble Native Audio" según su propia
+declaracion oficial -- el motor de voz nuevo no expone su pipeline de audio al sistema de submix en
+absoluto, ni por canal ni por oyente. No hay forma de portarlo tal cual.
+
+**Decision de Oscar: quitarla, dejar la radio como audio no-espacial plano** (sin estatica). Buena
+noticia encontrada de paso: el efecto **ya estaba muerto de facto** en produccion -- `toggleVoice`
+(el unico sitio que aplica el submix) ya se salta entero tanto para radio (`voice_useNativeRadio`)
+como para llamadas (`voice_useNativeCalls`) cuando el modo nativo esta activo (fix ya hecho
+2026-09-02), y ambas convars estan activas en produccion desde el commit `74b20f4` de
+`FiveM-Enhanced`. O sea, nadie oia estatica ya -- esto solo lo hace explicito/permanente en vez de
+un efecto colateral de que el modo nativo este encendido.
+
+**Hecho:** `voice_enableSubmix 0` en el `server.cfg` de produccion (convar dedicado que ya existia
+para esto, ver `README.md`/`fxmanifest.lua`) -- cierra el hueco de raiz sin tocar codigo ni arriesgar
+nada (ya era inerte). El codigo de `submix.lua`/`toggleVoice`/`registerCustomSubmix` se deja tal
+cual (generico, tambien lo usarian `call`/otros efectos si algun dia se reactivase Mumble a mano) --
+no hace falta borrarlo para que la decision sea efectiva.
+
+**Estado de "cepillar Mumble" tras esto:** quedan 2 huecos reales sin native equivalente
+confirmado -- mute de admin (`toggleMutePlayer`, decision pendiente sobre si pasa a mute global vs
+seguir en Mumble) y modo espectador (sin investigar todavia). Mientras cualquiera de los dos siga en
+Mumble, `sv_mumble true` no se puede apagar del todo.
+
+## 2026-09-04 (2) — `vtest_d_radio`: los arneses A/B/C no probaban radio de verdad · Claude
+
+**Pedido por Oscar:** con las tres convars nativas ya activas en producción, probar radios en vivo
+(Fase 4, nunca confirmada) -- pidió usar los comandos de prueba existentes si servían, o crear uno
+si no.
+
+**Encontrado:** `vtest_a_nonspatial_solo`/`b`/`c` usan `createNativeChannel(NATIVE_VOICE_MODE.NON_SPATIAL, 0.0)`
+directamente -- **exactamente los mismos parámetros** que usa `radio.lua:getOrCreateNativeRadioChannel`
+para un canal de radio real. Es decir, `vtest_a` ya valida el primitivo nativo de radio a nivel
+mecánico, pero se salta TODA la lógica propia de `radio.lua` (`canJoinChannel`, `radioData`, y sobre
+todo el mute-por-defecto-hasta-PTT de `addPlayerToRadio` -- los canales de radio nativos silencian
+al jugador nada más entrar, solo se destapan mientras se mantiene pulsado el PTT). Ninguno de los
+tres arneses existentes prueba eso.
+
+**Hecho:** `vtest_d_radio <serverId2> [mas ids]` en `server/module/voice_native_test.lua` --
+llama a `setPlayerRadio(target, 999)` (frecuencia de prueba fija, para no chocar con radios reales
+en uso) tal cual lo hace el flujo real de producción (item de radio / `/radio`), no un canal
+sintético. Si `vtest_a` funciona pero `vtest_d_radio` no, el problema está en la lógica propia de
+`radio.lua`, no en el canal nativo en sí -- distingue mejor la causa que repetir el mismo escenario
+de A. Requiere mantener pulsado el PTT (`voice_defaultRadio`, `LMENU` en este server) para
+oírse -- avisa de esto en el propio print del comando.
+
+**Sin confirmar en vivo todavía.**
+
+---
+
 ## 2026-09-04 — Auditoría completa de natives Mumble restantes, cierra los últimos huecos sin condicionar · Claude
 
 **Pedido por Oscar:** "revisa en pma y en phone donde se usan nativas de mumble y vamos a acabar

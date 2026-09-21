@@ -129,7 +129,16 @@ exports("setEffectSubmix", function(type, effectId)
 end)
 
 function restoreDefaultSubmix(plyServerId)
-	local submix = Player(plyServerId).state.submix
+	-- CachopoRP: Player(plyServerId) devuelve nil si ese id ya no corresponde a un jugador
+	-- conectado -- esto se llama 250ms DESPUES de colgar/callar (SetTimeout mas abajo), tiempo
+	-- de sobra para que el otro jugador se haya desconectado de verdad si la desconexion
+	-- coincidio con el final de la llamada. Sin este guard, ".state" sobre nil rompia el script
+	-- (y sospechoso de contribuir al crash real reportado en vivo al colgar una llamada --
+	-- ver CLAUDE_LOG.md).
+	local target = Player(plyServerId)
+	if not target then return end
+
+	local submix = target.state.submix
 	local submixEffect = submixIndicies[submix]
 	if not submix or not submixEffect then
 		MumbleSetSubmixForServerId(plyServerId, -1)
@@ -147,6 +156,12 @@ local disableSubmixReset = {}
 ---@param moduleType string the volume & submix to use for the voice.
 function toggleVoice(plySource, enabled, moduleType)
 	if mutedPlayers[plySource] then return end
+	-- CachopoRP: guard real -- si plySource ya no es un jugador conectado (desconexion
+	-- coincidiendo con colgar/callar), los natives de Mumble de mas abajo
+	-- (MumbleSetVolumeOverrideByServerId/MumbleSetSubmixForServerId) se llamaban igual con un
+	-- serverId obsoleto. Sospechoso de contribuir al crash real reportado en vivo al colgar
+	-- una llamada -- ver CLAUDE_LOG.md.
+	if GetPlayerFromServerId(plySource) == -1 then return end
 	logger.verbose('[main] Updating %s to talking: %s with submix %s', plySource, enabled, moduleType)
 	local distance = currentTargets[plySource]
 	if enabled and (not distance or distance > 4.0) then
@@ -257,14 +272,23 @@ exports('getMutedPlayers', function()
 end)
 
 --- toggles the targeted player muted
+--- CachopoRP 2026-09-06: esto era un mute PERSONAL (MumbleSetVolumeOverrideByServerId --
+--- solo dejaba de oirlo quien pulsaba el boton), sin equivalente nativo real (mismo
+--- motivo por el que se descarto la estatica de radio, ver CLAUDE_LOG.md). Con
+--- sv_mumble desactivado ya no hacia nada de verdad -- el boton (qbx_adminmenu,
+--- mm_radio) parecia funcionar pero el jugador seguia oyendose igual para todos.
+--- Decision de Oscar: redirigir al mute GLOBAL de moderacion (setPlayerAdminMuted,
+--- el mismo que usa /muteply) -- cambia la semantica de "solo para mi" a "silenciado
+--- para todos", con permiso server-side (mismo ACE que /muteply) para que no sea un
+--- hueco de seguridad poder silenciar a cualquiera desde este boton sin permiso.
 ---@param source number the player to mute
 function toggleMutePlayer(source)
 	if mutedPlayers[source] then
 		mutedPlayers[source] = nil
-		MumbleSetVolumeOverrideByServerId(source, -1.0)
+		TriggerServerEvent('pma-voice:server:setPlayerAdminMuted', source, false)
 	else
 		mutedPlayers[source] = true
-		MumbleSetVolumeOverrideByServerId(source, 0.0)
+		TriggerServerEvent('pma-voice:server:setPlayerAdminMuted', source, true)
 	end
 end
 
@@ -294,19 +318,27 @@ exports('SetTokoProperty', setVoiceProperty)
 
 
 -- cache their external servers so if it changes in runtime we can reconnect the client.
-local externalAddress = ''
-local externalPort = 0
-CreateThread(function()
-	while true do
-		Wait(500)
-		-- only change if what we have doesn't match the cache
-		if GetConvar('voice_externalAddress', '') ~= externalAddress or GetConvarInt('voice_externalPort', 0) ~= externalPort then
-			externalAddress = GetConvar('voice_externalAddress', '')
-			externalPort = GetConvarInt('voice_externalPort', 0)
-			MumbleSetServerAddress(GetConvar('voice_externalAddress', ''), GetConvarInt('voice_externalPort', 0))
+-- CachopoRP 2026-09-06: MumbleSetServerAddress solo importa con
+-- voice_external_host/voice_external_connect (servidor de Mumble externo) --
+-- VOZ.md ya documento que no aplica a este proyecto, usamos voice_internal.
+-- Con sv_mumble desactivado ademas, este native ya no hace nada real -- se
+-- salta el hilo entero en vez de sondear convars cada 500ms en balde el
+-- 100% del tiempo de juego.
+if GetConvar('sv_mumble', 'false') == 'true' then
+	local externalAddress = ''
+	local externalPort = 0
+	CreateThread(function()
+		while true do
+			Wait(500)
+			-- only change if what we have doesn't match the cache
+			if GetConvar('voice_externalAddress', '') ~= externalAddress or GetConvarInt('voice_externalPort', 0) ~= externalPort then
+				externalAddress = GetConvar('voice_externalAddress', '')
+				externalPort = GetConvarInt('voice_externalPort', 0)
+				MumbleSetServerAddress(GetConvar('voice_externalAddress', ''), GetConvarInt('voice_externalPort', 0))
+			end
 		end
-	end
-end)
+	end)
+end
 
 
 if gameVersion == 'redm' then
