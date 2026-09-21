@@ -202,6 +202,57 @@ end
 
 exports('setPlayerRadio', setPlayerRadio)
 
+-- ── Escucha "incognito" de una frecuencia (2026-09-21, para qbx_adminmenu) ──────────────────────
+-- Solo con voice_useNativeRadio=1. Mete a `source` en el canal nativo de esa frecuencia SILENCIADO
+-- (VOZ.md: "escuchar sin poder hablar = AddPlayerToVoiceChannel + SetPlayerMutedInVoiceChannel true")
+-- y SIN tocar radioData/voiceData/Player.state.radioChannel: no sale en la lista de miembros, no
+-- dispara addPlayerToRadio en nadie y el PTT (setTalkingOnRadio) no puede abrirle el micro, porque
+-- el servidor solo desmutea a quien tiene voiceData[source].radio en esa frecuencia. NO crea el canal
+-- si la frecuencia no tiene gente (solo se puede escuchar lo que ya esta activo).
+-- Devuelve true, o un string con el motivo del fallo (los exports solo devuelven un valor):
+-- 'native_off' | 'bad_channel' | 'no_channel' | 'join_failed'.
+local radioListeners = {} -- [source] = radioChannel
+
+local function removeRadioListener(source)
+	local radioChannel = radioListeners[source]
+	if not radioChannel then return false end
+	radioListeners[source] = nil
+	local channelId = nativeRadioChannels[radioChannel]
+	if channelId then
+		removePlayerFromNativeChannel(channelId, source)
+	end
+	logger.verbose('[radio] Listener %s dejo de escuchar la frecuencia %s', source, radioChannel)
+	return true
+end
+
+---@param source number
+---@param _radioChannel number
+---@return boolean|string
+local function addRadioListener(source, _radioChannel)
+	if not isNativeRadioActive() then return 'native_off' end
+	local radioChannel = tonumber(_radioChannel)
+	if not radioChannel or radioChannel <= 0 then return 'bad_channel' end
+	local channelId = nativeRadioChannels[radioChannel]
+	if not channelId then return 'no_channel' end
+
+	if radioListeners[source] then removeRadioListener(source) end
+	if not addPlayerToNativeChannel(channelId, source) then return 'join_failed' end
+	setPlayerMutedInNativeChannel(channelId, source, true)
+	radioListeners[source] = radioChannel
+	logger.verbose('[radio] Listener %s escucha la frecuencia %s (canal nativo %s)', source, radioChannel, channelId)
+	return true
+end
+
+exports('addRadioListener', addRadioListener)
+exports('removeRadioListener', removeRadioListener)
+--- frecuencia que escucha `source` en incognito, o nil
+exports('getRadioListener', function(source) return radioListeners[source] end)
+
+-- Los canales nativos ya expulsan a quien se desconecta (VOZ.md); aqui solo se limpia el registro.
+AddEventHandler('playerDropped', function()
+	radioListeners[source] = nil
+end)
+
 RegisterNetEvent('pma-voice:setPlayerRadio', function(radioChannel)
 	setPlayerRadio(source, radioChannel)
 end)

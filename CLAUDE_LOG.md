@@ -691,3 +691,17 @@ Savia (diff contra upstream, reaplicar personalizaciones si las hay).
 - `server.cfg`: `ensure pma-voice` + convars, justo después de `ensure chat`. Los valores **no son los por defecto** — calcados de `rpbase/txAdminRecipe/voice.cfg` (config real ya usada antes en producción, encontrada al comparar): `voice_defaultCycle "GRAVE"` (en vez de F11), `voice_defaultRadioVolume 60` (en vez de 30), `voice_defaultCallVolume 80` (en vez de 60), `voice_useNativeAudio true` (audio 3D con eco/reverb, recomendado por el propio README de pma-voice, requerido para los submixes).
 
 **Pendiente:** desplegar (`deploy-changed.yml` lo detectará solo al bumpear el puntero del submódulo) y **reinicio completo del server** — el `ensure` nuevo solo se lee al arrancar. Confirmar en vivo que la voz funciona con el rango de proximidad y que la tecla `GRAVE` cicla el modo correctamente.
+
+## 2026-09-21 — Escucha "incognito" de una frecuencia (exports para qbx_adminmenu)
+
+Peticion de Oscar: que un admin/mod pueda supervisar un canal de radio sin interrumpir el rol ni aparecer en la lista.
+`server/module/radio.lua`: nuevos exports `addRadioListener(source, radioChannel)`, `removeRadioListener(source)` y
+`getRadioListener(source)`. Solo con `voice_useNativeRadio=1`. Mete al jugador en el canal nativo de la frecuencia
+SILENCIADO (receta de VOZ.md: `AddPlayerToVoiceChannel` + `SetPlayerMutedInVoiceChannel true`, via los helpers de
+`native_channels.lua`) y SIN tocar `radioData`/`voiceData`/`Player.state.radioChannel`: no sale en la lista de miembros,
+no dispara `addPlayerToRadio` en nadie, y el PTT no puede abrirle el micro (`setTalkingOnRadio` solo desmutea a quien
+tiene `voiceData[source].radio` en esa frecuencia). No crea el canal si la frecuencia no tiene gente. Devuelve `true` o un
+string de motivo (`native_off`, `bad_channel`, `no_channel`, `join_failed`). Limpieza al desconectar (`playerDropped`).
+Adicion pura: no cambia `setPlayerRadio` ni el flujo normal. Antes se alineo `crp-experimental` con `cachoporp` (iba 13
+commits por detras). **Sin probar en juego.**
+
